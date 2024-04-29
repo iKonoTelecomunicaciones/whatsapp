@@ -1013,7 +1013,7 @@ func (portal *Portal) handleMessage(source *User, evt *events.Message, historica
 				if err != nil {
 					portal.log.Errorfln("Failed to send %s to Matrix: %v", msgID, err)
 				}
-			} else if evt.Message.GetExtendedTextMessage().GetContextInfo().ConversionSource != nil && *evt.Message.GetExtendedTextMessage().GetContextInfo().ConversionSource == "FB_Ads" {
+			} else if evt.Message.GetExtendedTextMessage().GetContextInfo() != nil && *evt.Message.GetExtendedTextMessage().GetContextInfo().GetExternalAdReply().SourceUrl != "" {
 				log.Fatal("Event type FB_Ads")
 				intent.SendText(portal.MXID, *evt.Message.GetExtendedTextMessage().GetContextInfo().ExternalAdReply.SourceUrl)
 			}
