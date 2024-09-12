@@ -771,6 +771,9 @@ func (portal *Portal) convertMessage(ctx context.Context, intent *appservice.Int
 	case waMsg.GroupInviteMessage != nil:
 		return portal.convertGroupInviteMessage(ctx, intent, info, waMsg.GetGroupInviteMessage())
 	case waMsg.ProtocolMessage != nil && waMsg.ProtocolMessage.GetType() == waProto.ProtocolMessage_EPHEMERAL_SETTING:
+		if !portal.bridge.Config.WhatsApp.EnableEphemeralMessages && waMsg.ProtocolMessage.GetEphemeralExpiration() > 0 {
+			return nil
+		}
 		portal.ExpirationTime = waMsg.ProtocolMessage.GetEphemeralExpiration()
 		err := portal.Update(ctx)
 		if err != nil {
@@ -790,6 +793,9 @@ func (portal *Portal) convertMessage(ctx context.Context, intent *appservice.Int
 }
 
 func (portal *Portal) implicitlyEnableDisappearingMessages(ctx context.Context, timer time.Duration) {
+	if !portal.bridge.Config.WhatsApp.EnableEphemeralMessages && timer > 0 {
+		return
+	}
 	portal.ExpirationTime = uint32(timer.Seconds())
 	err := portal.Update(ctx)
 	if err != nil {
@@ -1137,6 +1143,9 @@ func (portal *Portal) handleMessage(ctx context.Context, source *User, evt *even
 			portal.HandleMessageReaction(ctx, intent, source, &evt.Info, evt.Message.GetReactionMessage(), existingMsg)
 		}
 	} else if msgType == "revoke" {
+		if !portal.bridge.Config.WhatsApp.BridgeDeleteMessage {
+			return
+		}
 		portal.HandleMessageRevoke(ctx, source, &evt.Info, evt.Message.GetProtocolMessage().GetKey())
 		if existingMsg != nil {
 			_, _ = portal.MainIntent().RedactEvent(ctx, portal.MXID, existingMsg.MXID, mautrix.ReqRedact{
