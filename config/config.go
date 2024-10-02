@@ -42,7 +42,7 @@ type Config struct {
 		Proxy                   string `yaml:"proxy"`
 		GetProxyURL             string `yaml:"get_proxy_url"`
 		ProxyOnlyLogin          bool   `yaml:"proxy_only_login"`
-		EnableEphemeralMessages bool   `yaml:"disable_ephemeral_messages"`
+		EnableEphemeralMessages bool   `yaml:"enable_ephemeral_messages"`
 		BridgeDeleteMessage     bool   `yaml:"bridge_delete_message"`
 	} `yaml:"whatsapp"`
 

@@ -30,7 +30,7 @@ import (
 )
 
 func (portal *Portal) MarkDisappearing(ctx context.Context, eventID id.EventID, expiresIn time.Duration, startsAt time.Time) {
-	if expiresIn == 0 {
+	if expiresIn == 0 || !portal.bridge.Config.WhatsApp.EnableEphemeralMessages {
 		return
 	}
 	expiresAt := startsAt.Add(expiresIn)
