@@ -106,6 +106,10 @@ whatsapp:
     get_proxy_url: null
     # Whether the proxy options should only apply to the login websocket and not to authenticated connections.
     proxy_only_login: false
+    # Enable whatsapp ephemeral messages
+    enable_ephemeral_messages: false
+    # Bridge delete message event to matrix
+    bridge_delete_message: true
 
 # Bridge config
 bridge:
