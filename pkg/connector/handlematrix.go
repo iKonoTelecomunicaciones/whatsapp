@@ -78,6 +78,22 @@ func (wa *WhatsAppClient) handleConvertedMatrixMessage(ctx context.Context, msg 
 	}
 	wrappedMsgID := waid.MakeMessageID(chatJID, wa.JID, messageID)
 	msg.AddPendingToIgnore(networkid.TransactionID(wrappedMsgID))
+
+	if msg.Content.MsgType == event.MsgNotice && !wa.Main.Config.BridgeNotices {
+		return &bridgev2.MatrixMessageResponse{
+			DB: &database.Message{
+				ID:        wrappedMsgID,
+				SenderID:  waid.MakeUserID(wa.JID),
+				Timestamp:  time.Unix(msg.Event.Timestamp, 0),
+				Metadata: &waid.MessageMetadata{
+					SenderDeviceID: wa.JID.Device,
+				},
+			},
+			StreamOrder:   msg.Event.Timestamp,
+			RemovePending: networkid.TransactionID(wrappedMsgID),
+		}, nil
+	}
+
 	resp, err := wa.Client.SendMessage(ctx, chatJID, waMsg, whatsmeow.SendRequestExtra{
 		ID: messageID,
 	})
