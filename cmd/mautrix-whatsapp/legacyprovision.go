@@ -372,3 +372,65 @@ func legacyProvPing(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	exhttp.WriteJSONResponse(w, http.StatusOK, resp)
 }
+
+func legacyProvRoomInfo(w http.ResponseWriter, r *http.Request) {
+	userLogin := m.Matrix.Provisioning.GetLoginForRequest(w, r)
+
+	if userLogin == nil {
+		return
+	}
+
+	room_id := r.URL.Query().Get("room_id")
+
+	if room_id == "" {
+		exhttp.WriteJSONResponse(w, http.StatusBadRequest, Error{
+			Error:   "Missing room_id",
+			ErrCode: "missing room_id",
+		})
+		return
+	}
+
+	portal, err := m.Bridge.GetPortalByMXID(r.Context(), id.RoomID(room_id))
+
+	if err != nil {
+		exhttp.WriteJSONResponse(w, http.StatusInternalServerError, Error{
+			Error:   "Error while fetching portal",
+			ErrCode: "failed to get portal",
+		})
+		return
+	}
+
+	if portal == nil {
+		exhttp.WriteJSONResponse(w, http.StatusNotFound, Error{
+			Error:   "Portal not found",
+			ErrCode: "portal not found",
+		})
+		return
+	}
+
+	whatsappClient := userLogin.Client.(*connector.WhatsAppClient)
+	chatInfo, err := whatsappClient.GetChatInfo(r.Context(), portal)
+
+	if err != nil {
+		exhttp.WriteJSONResponse(w, http.StatusInternalServerError, Error{
+			Error:   "Error while fetching chat info",
+			ErrCode: "failed to get chat info",
+		})
+		return
+	}
+
+	portalInfo := map[string]interface{}{
+		"room_id":    portal.MXID,
+		"name":       chatInfo.Name,
+		"topic":      *chatInfo.Topic,
+		"avatar":     chatInfo.Avatar,
+		"members":    *chatInfo.Members,
+		"join_rule":  chatInfo.JoinRule,
+		"type":       *chatInfo.Type,
+		"disappear":  chatInfo.Disappear,
+		"parent_id":  chatInfo.ParentID,
+		"user_local": *chatInfo.UserLocal,
+	}
+
+	exhttp.WriteJSONResponse(w, http.StatusOK, portalInfo)
+}
