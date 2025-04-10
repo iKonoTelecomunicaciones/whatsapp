@@ -49,4 +49,4 @@ require (
 )
 
 // Remove this line to use the local version of golib
-replace maunium.net/go/mautrix => ./golib
+//replace maunium.net/go/mautrix => ./golib
