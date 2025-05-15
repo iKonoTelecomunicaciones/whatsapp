@@ -5,7 +5,9 @@ import (
 	"errors"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
@@ -433,4 +435,135 @@ func legacyProvRoomInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	exhttp.WriteJSONResponse(w, http.StatusOK, portalInfo)
+}
+
+func legacyProvSetPowerlevels(w http.ResponseWriter, r *http.Request) {
+	userLogin := m.Matrix.Provisioning.GetLoginForRequest(w, r)
+	if userLogin == nil {
+		return
+	}
+
+	// Get the room ID from the request
+	roomID := r.URL.Query().Get("room_id")
+
+	if roomID == "" {
+		exhttp.WriteJSONResponse(w, http.StatusBadRequest, Error{
+			Error:   "Missing room_id",
+			ErrCode: "missing room_id",
+		})
+		return
+	}
+
+	// Get the power level from the request and parse it to an int
+	powerLevel := r.URL.Query().Get("power_level")
+
+	if powerLevel == "" {
+		exhttp.WriteJSONResponse(w, http.StatusBadRequest, Error{
+			Error:   "Missing power_level",
+			ErrCode: "missing power_level",
+		})
+		return
+	}
+
+	powerLevelInt, err := strconv.Atoi(powerLevel)
+
+	if err != nil {
+		exhttp.WriteJSONResponse(w, http.StatusBadRequest, Error{
+			Error:   "Invalid power_level",
+			ErrCode: "invalid power_level",
+		})
+		return
+	}
+
+	// Get the user ID from the request
+	userID := r.URL.Query().Get("user_id")
+	if userID == "" {
+		exhttp.WriteJSONResponse(w, http.StatusBadRequest, Error{
+			Error:   "Missing user_id",
+			ErrCode: "missing user_id",
+		})
+		return
+	}
+
+	// Get the portal by room ID
+	portal, err := m.Bridge.GetPortalByMXID(r.Context(), id.RoomID(roomID))
+
+	if err != nil {
+		exhttp.WriteJSONResponse(w, http.StatusInternalServerError, Error{
+			Error:   "Error while fetching portal",
+			ErrCode: "failed to get portal",
+		})
+		return
+	}
+
+	if portal == nil {
+		exhttp.WriteJSONResponse(w, http.StatusNotFound, Error{
+			Error:   "Portal not found",
+			ErrCode: "portal not found",
+		})
+		return
+	}
+
+	// Get members of the portal
+	powerLevels, err := portal.Bridge.Matrix.GetPowerLevels(r.Context(), portal.MXID)
+
+	if err != nil {
+		exhttp.WriteJSONResponse(w, http.StatusInternalServerError, Error{
+			Error:   "Error while fetching portal members",
+			ErrCode: "failed to get portal members",
+		})
+		return
+	}
+
+	// Change the power level of the user
+	powerLevels.Users[id.UserID(userID)] = powerLevelInt
+
+	members, err := portal.Bridge.Matrix.GetMembers(r.Context(), portal.MXID)
+
+	if err != nil {
+		exhttp.WriteJSONResponse(w, http.StatusInternalServerError, Error{
+			Error:   "Error while fetching portal members",
+			ErrCode: "failed to get portal members",
+		})
+		return
+	}
+
+	if members == nil {
+		exhttp.WriteJSONResponse(w, http.StatusInternalServerError, Error{
+			Error:   "Error while fetching portal members",
+			ErrCode: "failed to get portal members",
+		})
+		return
+	}
+
+	var membersSlice []bridgev2.ChatMember
+	for userID := range powerLevels.Users {
+		member := members[id.UserID(userID)]
+
+		membersSlice = append(membersSlice, bridgev2.ChatMember{
+			Membership: member.Membership,
+			Nickname:   &member.Displayname,
+			PowerLevel: &powerLevelInt,
+		})
+	}
+
+	// Convert membersSlice to bridgev2.ChatMemberList
+	chatMemberList := bridgev2.ChatMemberList{
+		Members: membersSlice,
+	}
+
+	// Set the power levels for the portal
+	chatInfo := &bridgev2.ChatInfo{
+		Members: &chatMemberList,
+	}
+
+	portal.UpdateInfo(r.Context(), chatInfo, userLogin, m.Bridge.Matrix.BotIntent(), time.Now())
+
+	resp := Response{
+		Success: true,
+		Status:  "Power level set successfully",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	exhttp.WriteJSONResponse(w, http.StatusOK, resp)
 }

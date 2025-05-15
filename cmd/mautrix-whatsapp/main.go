@@ -50,6 +50,7 @@ func main() {
 			m.Matrix.Provisioning.Router.HandleFunc("/v1/pm/{number}", legacyProvResolveIdentifier).Methods(http.MethodPost)
 			m.Matrix.Provisioning.Router.HandleFunc("/v1/ping", legacyProvPing).Methods(http.MethodGet)
 			m.Matrix.Provisioning.Router.HandleFunc("/v1/room_info", legacyProvRoomInfo).Methods(http.MethodGet)
+			m.Matrix.Provisioning.Router.HandleFunc("/v1/set_power_level", legacyProvSetPowerlevels).Methods(http.MethodPost)
 			m.Matrix.Provisioning.GetAuthFromRequest = legacyProvAuth
 		}
 	}
