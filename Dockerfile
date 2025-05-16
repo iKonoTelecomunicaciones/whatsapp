@@ -15,6 +15,9 @@ RUN apk add --no-cache ffmpeg su-exec ca-certificates olm bash jq yq curl
 
 COPY --from=builder /build/mautrix-whatsapp /usr/bin/mautrix-whatsapp
 COPY --from=builder /build/docker-run.sh /docker-run.sh
+RUN mkdir /var/log/bridge \
+    && chown -R $UID:$GID /var/log/bridge/
+
 VOLUME /data
 
 CMD ["/docker-run.sh"]
