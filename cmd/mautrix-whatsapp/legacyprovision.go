@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
+
+	"maunium.net/go/mautrix/event"
 
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
@@ -87,6 +89,12 @@ type Error struct {
 type Response struct {
 	Success bool   `json:"success"`
 	Status  string `json:"status"`
+}
+
+type PowerLevelBody struct {
+	RoomID     string `json:"room_id"`
+	PowerLevel int    `json:"power_level"`
+	UserID     string `json:"user_id"`
 }
 
 func respondWebsocketWithError(conn *websocket.Conn, err error, message string) {
@@ -438,13 +446,23 @@ func legacyProvRoomInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 func legacyProvSetPowerlevels(w http.ResponseWriter, r *http.Request) {
+	var body PowerLevelBody
+	err := json.NewDecoder(r.Body).Decode(&body)
+
+	if err != nil {
+		http.Error(w, "Can't read body", http.StatusBadRequest)
+		return
+	}
+
+	log := hlog.FromRequest(r)
 	userLogin := m.Matrix.Provisioning.GetLoginForRequest(w, r)
 	if userLogin == nil {
 		return
 	}
 
-	// Get the room ID from the request
-	roomID := r.URL.Query().Get("room_id")
+	roomID := body.RoomID
+	powerLevel := body.PowerLevel
+	userID := body.UserID
 
 	if roomID == "" {
 		exhttp.WriteJSONResponse(w, http.StatusBadRequest, Error{
@@ -454,29 +472,14 @@ func legacyProvSetPowerlevels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get the power level from the request and parse it to an int
-	powerLevel := r.URL.Query().Get("power_level")
-
-	if powerLevel == "" {
+	if powerLevel <= 0 {
 		exhttp.WriteJSONResponse(w, http.StatusBadRequest, Error{
-			Error:   "Missing power_level",
-			ErrCode: "missing power_level",
+			Error:   "Invalid power level",
+			ErrCode: "invalid power level",
 		})
 		return
 	}
 
-	powerLevelInt, err := strconv.Atoi(powerLevel)
-
-	if err != nil {
-		exhttp.WriteJSONResponse(w, http.StatusBadRequest, Error{
-			Error:   "Invalid power_level",
-			ErrCode: "invalid power_level",
-		})
-		return
-	}
-
-	// Get the user ID from the request
-	userID := r.URL.Query().Get("user_id")
 	if userID == "" {
 		exhttp.WriteJSONResponse(w, http.StatusBadRequest, Error{
 			Error:   "Missing user_id",
@@ -516,52 +519,30 @@ func legacyProvSetPowerlevels(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Change the power level of the user
-	powerLevels.Users[id.UserID(userID)] = powerLevelInt
+	powerLevels.Users[id.UserID(userID)] = powerLevel
 
-	members, err := portal.Bridge.Matrix.GetMembers(r.Context(), portal.MXID)
+	botIntent := m.Bridge.Matrix.BotIntent()
+
+	content := event.Content{
+		Parsed: &powerLevels,
+	}
+
+	// Send the state event to the portal
+	event, err := botIntent.SendState(r.Context(), portal.MXID, event.StatePowerLevels, "", &content, time.Now())
 
 	if err != nil {
+		log.Error().Err(err).Msg("Error while changing power levels")
 		exhttp.WriteJSONResponse(w, http.StatusInternalServerError, Error{
-			Error:   "Error while fetching portal members",
-			ErrCode: "failed to get portal members",
+			Error:   "Error while changing power levels",
+			ErrCode: "failed to change power levels",
 		})
 		return
 	}
-
-	if members == nil {
-		exhttp.WriteJSONResponse(w, http.StatusInternalServerError, Error{
-			Error:   "Error while fetching portal members",
-			ErrCode: "failed to get portal members",
-		})
-		return
-	}
-
-	var membersSlice []bridgev2.ChatMember
-	for userID := range powerLevels.Users {
-		member := members[id.UserID(userID)]
-
-		membersSlice = append(membersSlice, bridgev2.ChatMember{
-			Membership: member.Membership,
-			Nickname:   &member.Displayname,
-			PowerLevel: &powerLevelInt,
-		})
-	}
-
-	// Convert membersSlice to bridgev2.ChatMemberList
-	chatMemberList := bridgev2.ChatMemberList{
-		Members: membersSlice,
-	}
-
-	// Set the power levels for the portal
-	chatInfo := &bridgev2.ChatInfo{
-		Members: &chatMemberList,
-	}
-
-	portal.UpdateInfo(r.Context(), chatInfo, userLogin, m.Bridge.Matrix.BotIntent(), time.Now())
 
 	resp := Response{
 		Success: true,
-		Status:  "Power level set successfully",
+		Status: "Successfully updated power level for user " + userID +
+			". Event ID: " + event.EventID.String() + " room ID: " + roomID,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
