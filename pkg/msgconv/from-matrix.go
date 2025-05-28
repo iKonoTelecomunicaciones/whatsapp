@@ -32,6 +32,7 @@ import (
 	"github.com/rs/zerolog"
 	"go.mau.fi/util/ffmpeg"
 	"go.mau.fi/util/ptr"
+	"go.mau.fi/util/random"
 	cwebp "go.mau.fi/webp"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waE2E"
@@ -47,7 +48,7 @@ import (
 	"go.mau.fi/mautrix-whatsapp/pkg/waid"
 )
 
-func (mc *MessageConverter) generateContextInfo(replyTo *database.Message, portal *bridgev2.Portal) (*waE2E.ContextInfo, error) {
+func (mc *MessageConverter) generateContextInfo(ctx context.Context, replyTo *database.Message, portal *bridgev2.Portal) *waE2E.ContextInfo {
 	contextInfo := &waE2E.ContextInfo{}
 	if replyTo != nil {
 		msgID, err := waid.ParseMessageID(replyTo.ID)
@@ -56,7 +57,10 @@ func (mc *MessageConverter) generateContextInfo(replyTo *database.Message, porta
 			contextInfo.Participant = proto.String(msgID.Sender.String())
 			contextInfo.QuotedMessage = &waE2E.Message{Conversation: proto.String("")}
 		} else {
-			return nil, err
+			zerolog.Ctx(ctx).Warn().Err(err).
+				Stringer("reply_to_event_id", replyTo.MXID).
+				Str("reply_to_message_id", string(replyTo.ID)).
+				Msg("Failed to parse reply to message ID")
 		}
 	}
 	if portal.Disappear.Timer > 0 {
@@ -66,7 +70,7 @@ func (mc *MessageConverter) generateContextInfo(replyTo *database.Message, porta
 			contextInfo.EphemeralSettingTimestamp = ptr.Ptr(setAt)
 		}
 	}
-	return contextInfo, nil
+	return contextInfo
 }
 
 func (mc *MessageConverter) ToWhatsApp(
@@ -74,9 +78,10 @@ func (mc *MessageConverter) ToWhatsApp(
 	client *whatsmeow.Client,
 	evt *event.Event,
 	content *event.MessageEventContent,
-	replyTo *database.Message,
+	replyTo,
+	threadRoot *database.Message,
 	portal *bridgev2.Portal,
-) (*waE2E.Message, error) {
+) (*waE2E.Message, *whatsmeow.SendRequestExtra, error) {
 	ctx = context.WithValue(ctx, contextKeyClient, client)
 	ctx = context.WithValue(ctx, contextKeyPortal, portal)
 	if evt.Type == event.EventSticker {
@@ -84,10 +89,7 @@ func (mc *MessageConverter) ToWhatsApp(
 	}
 
 	message := &waE2E.Message{}
-	contextInfo, err := mc.generateContextInfo(replyTo, portal)
-	if err != nil {
-		return nil, err
-	}
+	contextInfo := mc.generateContextInfo(ctx, replyTo, portal)
 
 	switch content.MsgType {
 	case event.MsgText, event.MsgNotice, event.MsgEmote:
@@ -95,13 +97,13 @@ func (mc *MessageConverter) ToWhatsApp(
 	case event.MessageType(event.EventSticker.Type), event.MsgImage, event.MsgVideo, event.MsgAudio, event.MsgFile:
 		uploaded, thumbnail, mime, err := mc.reuploadFileToWhatsApp(ctx, content)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		message = mc.constructMediaMessage(ctx, content, evt, uploaded, thumbnail, contextInfo, mime)
 	case event.MsgLocation:
 		lat, long, err := parseGeoURI(content.GeoURI)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		message.LocationMessage = &waE2E.LocationMessage{
 			DegreesLatitude:  &lat,
@@ -110,9 +112,40 @@ func (mc *MessageConverter) ToWhatsApp(
 			ContextInfo:      contextInfo,
 		}
 	default:
-		return nil, fmt.Errorf("%w %s", bridgev2.ErrUnsupportedMessageType, content.MsgType)
+		return nil, nil, fmt.Errorf("%w %s", bridgev2.ErrUnsupportedMessageType, content.MsgType)
 	}
-	return message, nil
+	extra := &whatsmeow.SendRequestExtra{}
+	if portal.Metadata.(*waid.PortalMetadata).CommunityAnnouncementGroup {
+		if threadRoot != nil {
+			parsedID, err := waid.ParseMessageID(threadRoot.ID)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to parse message ID: %w", err)
+			}
+			rootMsgInfo := MessageIDToInfo(client, parsedID)
+			message, err = client.EncryptComment(ctx, rootMsgInfo, message)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to encrypt comment: %w", err)
+			}
+			lid := parsedID.Sender
+			if lid.Server == types.DefaultUserServer {
+				lid, err = client.Store.LIDs.GetLIDForPN(ctx, parsedID.Sender)
+				if err != nil {
+					return nil, nil, fmt.Errorf("failed to get LID for PN: %w", err)
+				}
+			}
+			extra.Meta = &types.MsgMetaInfo{
+				ThreadMessageID:        parsedID.ID,
+				ThreadMessageSenderJID: lid,
+				DeprecatedLIDSession:   ptr.Ptr(false),
+			}
+		} else {
+			// TODO check permissions?
+			message.MessageContextInfo = &waE2E.MessageContextInfo{
+				MessageSecret: random.Bytes(32),
+			}
+		}
+	}
+	return message, extra, nil
 }
 
 func (mc *MessageConverter) constructMediaMessage(

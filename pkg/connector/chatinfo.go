@@ -31,7 +31,7 @@ func (wa *WhatsAppClient) GetChatInfo(ctx context.Context, portal *bridgev2.Port
 
 func (wa *WhatsAppClient) getChatInfo(ctx context.Context, portalJID types.JID, conv *wadb.Conversation) (wrapped *bridgev2.ChatInfo, err error) {
 	switch portalJID.Server {
-	case types.DefaultUserServer, types.BotServer:
+	case types.DefaultUserServer, types.HiddenUserServer, types.BotServer:
 		wrapped = wa.wrapDMInfo(portalJID)
 	case types.BroadcastServer:
 		if portalJID == types.StatusBroadcastJID {
@@ -55,7 +55,13 @@ func (wa *WhatsAppClient) getChatInfo(ctx context.Context, portalJID types.JID, 
 	default:
 		return nil, fmt.Errorf("unsupported server %s", portalJID.Server)
 	}
+	wa.addExtrasToWrapped(ctx, portalJID, wrapped, conv)
+	return wrapped, nil
+}
+
+func (wa *WhatsAppClient) addExtrasToWrapped(ctx context.Context, portalJID types.JID, wrapped *bridgev2.ChatInfo, conv *wadb.Conversation) {
 	if conv == nil {
+		var err error
 		conv, err = wa.Main.DB.Conversation.Get(ctx, wa.UserLogin.ID, portalJID)
 		if err != nil {
 			zerolog.Ctx(ctx).Warn().Err(err).Msg("Failed to get history sync conversation info")
@@ -65,7 +71,6 @@ func (wa *WhatsAppClient) getChatInfo(ctx context.Context, portalJID types.JID, 
 		wa.applyHistoryInfo(wrapped, conv)
 	}
 	wa.applyChatSettings(ctx, portalJID, wrapped)
-	return wrapped, nil
 }
 
 func updatePortalLastSyncAt(_ context.Context, portal *bridgev2.Portal) bool {
@@ -87,7 +92,7 @@ func updateDisappearingTimerSetAt(ts int64) bridgev2.ExtraUpdater[*bridgev2.Port
 }
 
 func (wa *WhatsAppClient) applyChatSettings(ctx context.Context, chatID types.JID, info *bridgev2.ChatInfo) {
-	chat, err := wa.GetStore().ChatSettings.GetChatSettings(chatID)
+	chat, err := wa.GetStore().ChatSettings.GetChatSettings(ctx, chatID)
 	if err != nil {
 		zerolog.Ctx(ctx).Warn().Err(err).Msg("Failed to get chat settings")
 		return
@@ -191,15 +196,42 @@ const (
 	defaultPL    = 0
 )
 
+func setDefaultSubGroupFlag(isCommunityAnnouncementGroup bool) bridgev2.ExtraUpdater[*bridgev2.Portal] {
+	return func(_ context.Context, portal *bridgev2.Portal) bool {
+		meta := portal.Metadata.(*waid.PortalMetadata)
+		if meta.CommunityAnnouncementGroup != isCommunityAnnouncementGroup {
+			meta.CommunityAnnouncementGroup = isCommunityAnnouncementGroup
+			return true
+		}
+		return false
+	}
+}
+
+func setAddressingMode(mode types.AddressingMode) bridgev2.ExtraUpdater[*bridgev2.Portal] {
+	return func(_ context.Context, portal *bridgev2.Portal) bool {
+		meta := portal.Metadata.(*waid.PortalMetadata)
+		if meta.AddressingMode != mode {
+			meta.AddressingMode = mode
+			return true
+		}
+		return false
+	}
+}
+
 func (wa *WhatsAppClient) wrapGroupInfo(info *types.GroupInfo) *bridgev2.ChatInfo {
 	sendEventPL := defaultPL
-	if info.IsAnnounce {
+	if info.IsAnnounce && !info.IsDefaultSubGroup {
 		sendEventPL = adminPL
 	}
 	metaChangePL := defaultPL
 	if info.IsLocked {
 		metaChangePL = adminPL
 	}
+	extraUpdater := bridgev2.MergeExtraUpdaters(
+		wa.makePortalAvatarFetcher("", types.EmptyJID, time.Time{}),
+		setDefaultSubGroupFlag(info.IsDefaultSubGroup && info.IsAnnounce),
+		setAddressingMode(info.AddressingMode),
+	)
 	wrapped := &bridgev2.ChatInfo{
 		Name:  ptr.Ptr(info.Name),
 		Topic: ptr.Ptr(info.Topic),
@@ -226,12 +258,9 @@ func (wa *WhatsAppClient) wrapGroupInfo(info *types.GroupInfo) *bridgev2.ChatInf
 			Type:  database.DisappearingTypeAfterRead,
 			Timer: time.Duration(info.DisappearingTimer) * time.Second,
 		},
-		ExtraUpdates: wa.makePortalAvatarFetcher("", types.EmptyJID, time.Time{}),
+		ExtraUpdates: extraUpdater,
 	}
 	for _, pcp := range info.Participants {
-		if pcp.JID.Server != types.DefaultUserServer {
-			continue
-		}
 		member := bridgev2.ChatMember{
 			EventSender: wa.makeEventSender(pcp.JID),
 			Membership:  event.MembershipJoin,
@@ -290,35 +319,23 @@ func (wa *WhatsAppClient) wrapGroupInfoChange(evt *events.GroupInfo) *bridgev2.C
 			MemberMap: make(map[networkid.UserID]bridgev2.ChatMember),
 		}
 		for _, userID := range evt.Join {
-			if userID.Server != types.DefaultUserServer {
-				continue
-			}
 			memberChanges.MemberMap[waid.MakeUserID(userID)] = bridgev2.ChatMember{
 				EventSender: wa.makeEventSender(userID),
 			}
 		}
 		for _, userID := range evt.Promote {
-			if userID.Server != types.DefaultUserServer {
-				continue
-			}
 			memberChanges.MemberMap[waid.MakeUserID(userID)] = bridgev2.ChatMember{
 				EventSender: wa.makeEventSender(userID),
 				PowerLevel:  ptr.Ptr(adminPL),
 			}
 		}
 		for _, userID := range evt.Demote {
-			if userID.Server != types.DefaultUserServer {
-				continue
-			}
 			memberChanges.MemberMap[waid.MakeUserID(userID)] = bridgev2.ChatMember{
 				EventSender: wa.makeEventSender(userID),
 				PowerLevel:  ptr.Ptr(defaultPL),
 			}
 		}
 		for _, userID := range evt.Leave {
-			if userID.Server != types.DefaultUserServer {
-				continue
-			}
 			memberChanges.MemberMap[waid.MakeUserID(userID)] = bridgev2.ChatMember{
 				EventSender: wa.makeEventSender(userID),
 				Membership:  event.MembershipLeave,
@@ -389,7 +406,7 @@ func (wa *WhatsAppClient) makePortalAvatarFetcher(avatarID string, sender types.
 			wrappedAvatar = &bridgev2.Avatar{
 				ID: networkid.AvatarID(avatar.ID),
 				Get: func(ctx context.Context) ([]byte, error) {
-					return wa.Client.DownloadMediaWithPath(avatar.DirectPath, nil, nil, nil, 0, "", "")
+					return wa.Client.DownloadMediaWithPath(ctx, avatar.DirectPath, nil, nil, nil, 0, "", "")
 				},
 			}
 		}
@@ -424,7 +441,7 @@ func (wa *WhatsAppClient) wrapNewsletterInfo(info *types.NewsletterMetadata) *br
 	if info.ThreadMeta.Picture != nil {
 		avatar.ID = networkid.AvatarID(info.ThreadMeta.Picture.ID)
 		avatar.Get = func(ctx context.Context) ([]byte, error) {
-			return wa.Client.DownloadMediaWithPath(info.ThreadMeta.Picture.DirectPath, nil, nil, nil, 0, "", "")
+			return wa.Client.DownloadMediaWithPath(ctx, info.ThreadMeta.Picture.DirectPath, nil, nil, nil, 0, "", "")
 		}
 	} else if info.ThreadMeta.Preview.ID != "" {
 		avatar.ID = networkid.AvatarID(info.ThreadMeta.Preview.ID)
@@ -435,7 +452,7 @@ func (wa *WhatsAppClient) wrapNewsletterInfo(info *types.NewsletterMetadata) *br
 			} else if meta.ThreadMeta.Picture == nil {
 				return nil, fmt.Errorf("full res avatar info is missing")
 			}
-			return wa.Client.DownloadMediaWithPath(meta.ThreadMeta.Picture.DirectPath, nil, nil, nil, 0, "", "")
+			return wa.Client.DownloadMediaWithPath(ctx, meta.ThreadMeta.Picture.DirectPath, nil, nil, nil, 0, "", "")
 		}
 	} else {
 		avatar.ID = "remove"

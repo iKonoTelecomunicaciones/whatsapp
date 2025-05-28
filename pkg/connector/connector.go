@@ -18,18 +18,26 @@ package connector
 
 import (
 	"context"
+	"encoding/hex"
+	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
 
+	"go.mau.fi/util/dbutil"
+	"go.mau.fi/util/random"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waCompanionReg"
 	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
+	whatsmeowUpgrades "go.mau.fi/whatsmeow/store/sqlstore/upgrades"
 	waLog "go.mau.fi/whatsmeow/util/log"
 	"google.golang.org/protobuf/proto"
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/commands"
+	"maunium.net/go/mautrix/bridgev2/networkid"
+	"maunium.net/go/mautrix/event"
+	"maunium.net/go/mautrix/id"
 
 	"go.mau.fi/mautrix-whatsapp/pkg/connector/wadb"
 	"go.mau.fi/mautrix-whatsapp/pkg/msgconv"
@@ -89,14 +97,18 @@ func (wa *WhatsAppConnector) Init(bridge *bridgev2.Bridge) {
 	wa.DB = wadb.New(bridge.ID, bridge.DB.Database, bridge.Log.With().Str("db_section", "whatsapp").Logger())
 	wa.MsgConv.DB = wa.DB
 	wa.Bridge.Commands.(*commands.Processor).AddHandlers(
-		cmdAccept,
+		cmdAccept, cmdSync, cmdInviteLink, cmdResolveLink, cmdJoin,
 	)
 	wa.mediaEditCache = make(MediaEditCache)
 
-	wa.DeviceStore = sqlstore.NewWithDB(
-		bridge.DB.RawDB,
-		bridge.DB.Dialect.String(),
-		waLog.Zerolog(bridge.Log.With().Str("db_section", "whatsmeow").Logger()),
+	whatsmeowDBLog := bridge.Log.With().Str("db_section", "whatsmeow").Logger()
+	wa.DeviceStore = sqlstore.NewWithWrappedDB(
+		bridge.DB.Child(
+			"whatsmeow_version",
+			whatsmeowUpgrades.Table,
+			dbutil.ZeroLogger(whatsmeowDBLog),
+		),
+		waLog.Zerolog(whatsmeowDBLog),
 	)
 
 	store.DeviceProps.Os = proto.String(wa.Config.OSName)
@@ -115,9 +127,15 @@ func (wa *WhatsAppConnector) Init(bridge *bridgev2.Bridge) {
 }
 
 func (wa *WhatsAppConnector) Start(ctx context.Context) error {
-	err := wa.DeviceStore.Upgrade()
+	err := wa.DeviceStore.Upgrade(ctx)
 	if err != nil {
 		return bridgev2.DBUpgradeError{Err: err, Section: "whatsmeow"}
+	}
+	if !wa.Bridge.Background {
+		err = wa.DeviceStore.LIDMap.FillCache(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to fill LID cache: %w", err)
+		}
 	}
 	err = wa.DB.Upgrade(ctx)
 	if err != nil {
@@ -134,7 +152,7 @@ func (wa *WhatsAppConnector) Stop() {
 }
 
 func (wa *WhatsAppConnector) onFirstClientConnect() {
-	ver, err := whatsmeow.GetLatestVersion(nil)
+	ver, err := whatsmeow.GetLatestVersion(wa.Bridge.BackgroundCtx, nil)
 	if err != nil {
 		wa.Bridge.Log.Err(err).Msg("Failed to get latest WhatsApp web version number")
 	} else {
@@ -147,4 +165,10 @@ func (wa *WhatsAppConnector) onFirstClientConnect() {
 	meclCtx, cancel := context.WithCancel(context.Background())
 	wa.stopMediaEditCacheLoop.Store(&cancel)
 	go wa.mediaEditCacheExpireLoop(meclCtx)
+}
+
+func (wa *WhatsAppConnector) GenerateTransactionID(_ id.UserID, _ id.RoomID, _ event.Type) networkid.RawTransactionID {
+	// The "proper" way would be a hash of the user ID among other things, but the hash includes random bytes too,
+	// so nobody can tell the difference if we just generate random bytes.
+	return networkid.RawTransactionID(whatsmeow.WebMessageIDPrefix + strings.ToUpper(hex.EncodeToString(random.Bytes(9))))
 }

@@ -29,6 +29,7 @@ import (
 
 type UserLoginMetadata struct {
 	WADeviceID      uint16        `json:"wa_device_id"`
+	WALID           string        `json:"wa_lid"`
 	PhoneLastSeen   jsontime.Unix `json:"phone_last_seen"`
 	PhoneLastPinged jsontime.Unix `json:"phone_last_pinged"`
 	Timezone        string        `json:"timezone"`
@@ -104,8 +105,10 @@ type ReactionMetadata struct {
 }
 
 type PortalMetadata struct {
-	DisappearingTimerSetAt int64         `json:"disappearing_timer_set_at,omitempty"`
-	LastSync               jsontime.Unix `json:"last_sync,omitempty"`
+	DisappearingTimerSetAt     int64                `json:"disappearing_timer_set_at,omitempty"`
+	LastSync                   jsontime.Unix        `json:"last_sync,omitempty"`
+	CommunityAnnouncementGroup bool                 `json:"is_cag,omitempty"`
+	AddressingMode             types.AddressingMode `json:"addressing_mode,omitempty"`
 }
 
 type GhostMetadata struct {
