@@ -73,10 +73,11 @@ func init() {
 
 func (wa *WhatsAppClient) handleWAEvent(rawEvt any) {
 	log := wa.UserLogin.Log
+	ctx := log.WithContext(wa.Main.Bridge.BackgroundCtx)
 
 	switch evt := rawEvt.(type) {
 	case *events.Message:
-		wa.handleWAMessage(evt)
+		wa.handleWAMessage(ctx, evt)
 	case *events.Receipt:
 		wa.handleWAReceipt(evt)
 	case *events.ChatPresence:
@@ -130,6 +131,7 @@ func (wa *WhatsAppClient) handleWAEvent(rawEvt any) {
 			if err != nil {
 				log.Warn().Err(err).Msg("Failed to send presence after app state sync")
 			}
+			go wa.syncRemoteProfile(log.WithContext(context.Background()), nil)
 		} else if evt.Name == appstate.WAPatchCriticalUnblockLow {
 			go wa.resyncContacts(false)
 		}
@@ -142,7 +144,7 @@ func (wa *WhatsAppClient) handleWAEvent(rawEvt any) {
 		if err != nil {
 			log.Warn().Err(err).Msg("Failed to send presence after push name update")
 		}
-		_, _, err = wa.GetStore().Contacts.PutPushName(wa.JID.ToNonAD(), evt.Action.GetName())
+		_, _, err = wa.GetStore().Contacts.PutPushName(ctx, wa.JID.ToNonAD(), evt.Action.GetName())
 		if err != nil {
 			log.Err(err).Msg("Failed to update push name in store")
 		}
@@ -164,6 +166,21 @@ func (wa *WhatsAppClient) handleWAEvent(rawEvt any) {
 					log.Warn().Err(err).Msg("Failed to send initial presence after connecting")
 				}
 			}()
+			go wa.syncRemoteProfile(log.WithContext(context.Background()), nil)
+		}
+		meta := wa.UserLogin.Metadata.(*waid.UserLoginMetadata)
+		if meta.WALID == "" {
+			meta.WALID = wa.GetStore().GetLID().User
+			if meta.WALID != "" {
+				go func() {
+					err := wa.UserLogin.Save(log.WithContext(context.Background()))
+					if err != nil {
+						log.Err(err).Msg("Failed to save user login metadata after updating LID")
+					} else {
+						log.Info().Msg("Updated LID in user login metadata")
+					}
+				}()
+			}
 		}
 	case *events.OfflineSyncPreview:
 		log.Info().
@@ -176,11 +193,11 @@ func (wa *WhatsAppClient) handleWAEvent(rawEvt any) {
 		if !wa.PhoneRecentlySeen(true) {
 			log.Info().
 				Time("phone_last_seen", wa.UserLogin.Metadata.(*waid.UserLoginMetadata).PhoneLastSeen.Time).
-				Msg("Offline sync completed, but phone last seen date is still old - sending phone offline bridge status")
-			wa.UserLogin.BridgeState.Send(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: WAPhoneOffline})
+				Msg("Offline sync completed, but phone last seen date is still old")
 		} else {
 			log.Info().Msg("Offline sync completed")
 		}
+		wa.UserLogin.BridgeState.Send(status.BridgeState{StateEvent: status.StateConnected})
 		wa.notifyOfflineSyncWaiter(nil)
 	case *events.LoggedOut:
 		wa.handleWALogout(evt.Reason, evt.OnConnect)
@@ -238,20 +255,35 @@ func (wa *WhatsAppClient) handleWAEvent(rawEvt any) {
 	}
 }
 
-func (wa *WhatsAppClient) handleWAMessage(evt *events.Message) {
+func (wa *WhatsAppClient) handleWAMessage(ctx context.Context, evt *events.Message) {
 	wa.UserLogin.Log.Trace().
 		Any("info", evt.Info).
 		Any("payload", evt.Message).
 		Msg("Received WhatsApp message")
-	if evt.Info.Chat.Server == types.HiddenUserServer || evt.Info.Sender.Server == types.HiddenUserServer {
-		return
-	}
 	if evt.Info.Chat == types.StatusBroadcastJID && !wa.Main.Config.EnableStatusBroadcast {
 		return
 	}
 	parsedMessageType := getMessageType(evt.Message)
 	if parsedMessageType == "ignore" || strings.HasPrefix(parsedMessageType, "unknown_protocol_") {
 		return
+	}
+	if encReact := evt.Message.GetEncReactionMessage(); encReact != nil {
+		decrypted, err := wa.Client.DecryptReaction(ctx, evt)
+		if err != nil {
+			wa.UserLogin.Log.Err(err).Str("message_id", evt.Info.ID).Msg("Failed to decrypt reaction")
+			return
+		}
+		decrypted.Key = encReact.GetTargetMessageKey()
+		evt.Message.ReactionMessage = decrypted
+	}
+	if encComment := evt.Message.GetEncCommentMessage(); encComment != nil {
+		decrypted, err := wa.Client.DecryptComment(ctx, evt)
+		if err != nil {
+			wa.UserLogin.Log.Err(err).Str("message_id", evt.Info.ID).Msg("Failed to decrypt comment")
+		} else {
+			decrypted.EncCommentMessage = evt.Message.GetEncCommentMessage()
+			evt.Message = decrypted
+		}
 	}
 	wa.Main.Bridge.QueueRemoteEvent(wa.UserLogin, &WAMessageEvent{
 		MessageInfoWrapper: &MessageInfoWrapper{
@@ -272,7 +304,7 @@ func (wa *WhatsAppClient) handleWAUndecryptableMessage(evt *events.Undecryptable
 		Str("decrypt_fail", string(evt.DecryptFailMode)).
 		Msg("Received undecryptable WhatsApp message")
 	wa.trackUndecryptable(evt)
-	if evt.DecryptFailMode == events.DecryptFailHide || evt.Info.Chat.Server == types.HiddenUserServer || evt.Info.Sender.Server == types.HiddenUserServer {
+	if evt.DecryptFailMode == events.DecryptFailHide {
 		return
 	}
 	if evt.Info.Chat == types.StatusBroadcastJID && !wa.Main.Config.EnableStatusBroadcast {
@@ -495,6 +527,7 @@ func (wa *WhatsAppClient) syncGhost(jid types.JID, reason string, pictureID *str
 		ghost.UpdateInfo(ctx, userInfo)
 		log.Debug().Msg("Synced ghost info")
 	}
+	go wa.syncRemoteProfile(ctx, ghost)
 }
 
 func (wa *WhatsAppClient) handleWAPictureUpdate(evt *events.Picture) {

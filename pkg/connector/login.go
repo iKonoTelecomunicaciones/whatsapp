@@ -104,6 +104,7 @@ type WALogin struct {
 var (
 	_ bridgev2.LoginProcessDisplayAndWait = (*WALogin)(nil)
 	_ bridgev2.LoginProcessUserInput      = (*WALogin)(nil)
+	_ bridgev2.LoginProcessWithOverride   = (*WALogin)(nil)
 )
 
 const LoginConnectWait = 15 * time.Second
@@ -149,6 +150,20 @@ func (wl *WALogin) Start(ctx context.Context) (*bridgev2.LoginStep, error) {
 	return makeQRStep(wl.QRs[0]), nil
 }
 
+func (wl *WALogin) StartWithOverride(ctx context.Context, old *bridgev2.UserLogin) (*bridgev2.LoginStep, error) {
+	step, err := wl.Start(ctx)
+	if err == nil && step != nil && old != nil && step.StepID == LoginStepIDPhoneNumber {
+		phoneNumber := fmt.Sprintf("+%s", old.ID)
+		wl.Log.Debug().
+			Str("phone_number", phoneNumber).
+			Msg("Auto-submitting phone number for relogin")
+		return wl.SubmitUserInput(ctx, map[string]string{
+			"phone_number": phoneNumber,
+		})
+	}
+	return step, err
+}
+
 func (wl *WALogin) SubmitUserInput(ctx context.Context, input map[string]string) (*bridgev2.LoginStep, error) {
 	ctx, cancel := context.WithTimeout(ctx, LoginConnectWait)
 	defer cancel()
@@ -162,7 +177,7 @@ func (wl *WALogin) SubmitUserInput(ctx context.Context, input map[string]string)
 		wl.Log.Warn().Err(err).Msg("Timed out waiting for connection")
 		return nil, fmt.Errorf("failed to wait for connection: %w", err)
 	}
-	pairingCode, err := wl.Client.PairPhone(input["phone_number"], true, whatsmeow.PairClientChrome, "Chrome (Linux)")
+	pairingCode, err := wl.Client.PairPhone(ctx, input["phone_number"], true, whatsmeow.PairClientChrome, "Chrome (Linux)")
 	if err != nil {
 		wl.Log.Err(err).Msg("Failed to request phone code login")
 		return nil, err
@@ -306,6 +321,7 @@ func (wl *WALogin) Wait(ctx context.Context) (*bridgev2.LoginStep, error) {
 			Name:  wl.LoginSuccess.BusinessName,
 		},
 		Metadata: &waid.UserLoginMetadata{
+			WALID:      wl.LoginSuccess.LID.User,
 			WADeviceID: wl.LoginSuccess.ID.Device,
 			Timezone:   wl.Timezone,
 

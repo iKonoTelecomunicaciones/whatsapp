@@ -90,7 +90,7 @@ func (wa *WhatsAppConnector) ValidateUserID(id networkid.UserID) bool {
 	case types.DefaultUserServer:
 		return len(jid.User) <= 13 && (jid.User == "0" || len(jid.User) >= 7) && isOnlyNumbers(jid.User)
 	case types.HiddenUserServer, types.BotServer:
-		return true
+		return len(jid.User) >= 12
 	default:
 		return false
 	}
@@ -136,7 +136,7 @@ func (wa *WhatsAppClient) getContactList(ctx context.Context, filter string) ([]
 	if !wa.IsLoggedIn() {
 		return nil, mautrix.MForbidden.WithMessage("You must be logged in to list contacts")
 	}
-	contacts, err := wa.GetStore().Contacts.GetAllContacts()
+	contacts, err := wa.GetStore().Contacts.GetAllContacts(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +149,7 @@ func (wa *WhatsAppClient) getContactList(ctx context.Context, filter string) ([]
 		resp = append(resp, &bridgev2.ResolveIdentifierResponse{
 			Ghost:    ghost,
 			UserID:   waid.MakeUserID(jid),
-			UserInfo: wa.contactToUserInfo(jid, contactInfo, false),
+			UserInfo: wa.contactToUserInfo(ctx, jid, contactInfo, false),
 			Chat:     &bridgev2.CreateChatResponse{PortalKey: wa.makeWAPortalKey(jid)},
 		})
 	}

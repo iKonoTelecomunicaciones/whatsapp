@@ -71,10 +71,7 @@ func (mc *MessageConverter) PollStartToWhatsApp(
 	if maxAnswers >= len(content.PollStart.Answers) || maxAnswers < 0 {
 		maxAnswers = 0
 	}
-	contextInfo, err := mc.generateContextInfo(replyTo, portal)
-	if err != nil {
-		return nil, nil, err
-	}
+	contextInfo := mc.generateContextInfo(ctx, replyTo, portal)
 	var question string
 	question, contextInfo.MentionedJID = mc.msc1767ToWhatsApp(ctx, content.PollStart.Question, content.Mentions)
 	if len(question) == 0 {
@@ -118,16 +115,8 @@ func (mc *MessageConverter) PollVoteToWhatsApp(
 		zerolog.Ctx(ctx).Err(err).Msg("Failed to parse message ID")
 		return nil, fmt.Errorf("failed to parse message ID")
 	}
-	pollMsgInfo := &types.MessageInfo{
-		MessageSource: types.MessageSource{
-			Chat:     parsedMsgID.Chat,
-			Sender:   parsedMsgID.Sender,
-			IsFromMe: parsedMsgID.Sender.User == client.Store.ID.User,
-			IsGroup:  parsedMsgID.Chat.Server == types.GroupServer,
-		},
-		ID:   parsedMsgID.ID,
-		Type: "poll",
-	}
+	pollMsgInfo := MessageIDToInfo(client, parsedMsgID)
+	pollMsgInfo.Type = "poll"
 	optionHashes := make([][]byte, 0, len(content.Response.Answers))
 	if pollMsg.Metadata.(*waid.MessageMetadata).IsMatrixPoll {
 		mappedAnswers, err := mc.DB.PollOption.GetHashes(ctx, pollMsg.MXID, content.Response.Answers)
@@ -151,8 +140,20 @@ func (mc *MessageConverter) PollVoteToWhatsApp(
 			}
 		}
 	}
-	pollUpdate, err := client.EncryptPollVote(pollMsgInfo, &waE2E.PollVoteMessage{
+	pollUpdate, err := client.EncryptPollVote(ctx, pollMsgInfo, &waE2E.PollVoteMessage{
 		SelectedOptions: optionHashes,
 	})
 	return &waE2E.Message{PollUpdateMessage: pollUpdate}, err
+}
+
+func MessageIDToInfo(client *whatsmeow.Client, parsedMsgID *waid.ParsedMessageID) *types.MessageInfo {
+	return &types.MessageInfo{
+		MessageSource: types.MessageSource{
+			Chat:     parsedMsgID.Chat,
+			Sender:   parsedMsgID.Sender,
+			IsFromMe: parsedMsgID.Sender.User == client.Store.GetLID().User || parsedMsgID.Sender.User == client.Store.GetJID().User,
+			IsGroup:  parsedMsgID.Chat.Server == types.GroupServer,
+		},
+		ID: parsedMsgID.ID,
+	}
 }

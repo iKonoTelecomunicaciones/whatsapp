@@ -415,7 +415,7 @@ func (mc *MessageConverter) reuploadWhatsAppAttachment(
 	if part.Info.Size > uploadFileThreshold {
 		var err error
 		part.URL, part.File, err = intent.UploadMediaStream(ctx, portal.MXID, -1, true, func(file io.Writer) (*bridgev2.FileStreamResult, error) {
-			err := client.DownloadToFile(message, file.(*os.File))
+			err := client.DownloadToFile(ctx, message, file.(*os.File))
 			if errors.Is(err, whatsmeow.ErrFileLengthMismatch) || errors.Is(err, whatsmeow.ErrInvalidMediaSHA256) {
 				zerolog.Ctx(ctx).Warn().Err(err).Msg("Mismatching media checksums in message. Ignoring because WhatsApp seems to ignore them too")
 			} else if err != nil {
@@ -436,7 +436,7 @@ func (mc *MessageConverter) reuploadWhatsAppAttachment(
 			return err
 		}
 	} else {
-		data, err := client.Download(message)
+		data, err := client.Download(ctx, message)
 		if errors.Is(err, whatsmeow.ErrFileLengthMismatch) || errors.Is(err, whatsmeow.ErrInvalidMediaSHA256) {
 			zerolog.Ctx(ctx).Warn().Err(err).Msg("Mismatching media checksums in message. Ignoring because WhatsApp seems to ignore them too")
 		} else if err != nil {
@@ -497,7 +497,7 @@ func (mc *MessageConverter) extractAnimatedSticker(fileInfo *PreparedMedia, data
 	if err != nil {
 		return nil, fmt.Errorf("failed to read animation.json: %w", err)
 	}
-	fileInfo.Info.MimeType = "image/lottie+json"
+	fileInfo.Info.MimeType = "video/lottie+json"
 	fileInfo.FileName = "sticker.json"
 	return data, nil
 }

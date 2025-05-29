@@ -97,9 +97,6 @@ func (wa *WhatsAppClient) handleWAHistorySync(ctx context.Context, evt *waHistor
 		} else if jid.Server == types.BroadcastServer {
 			log.Debug().Stringer("chat_jid", jid).Msg("Skipping broadcast list in history sync")
 			continue
-		} else if jid.Server == types.HiddenUserServer {
-			log.Debug().Stringer("chat_jid", jid).Msg("Skipping hidden user JID chat in history sync")
-			continue
 		}
 		totalMessageCount += len(conv.GetMessages())
 		log := log.With().
@@ -158,6 +155,7 @@ func (wa *WhatsAppClient) handleWAHistorySync(ctx context.Context, evt *waHistor
 			Dict("metadata", zerolog.Dict().
 				Uint32("ephemeral_expiration", conv.GetEphemeralExpiration()).
 				Int64("ephemeral_setting_timestamp", conv.GetEphemeralSettingTimestamp()).
+				Uint64("last_message_ts", conv.GetLastMsgTimestamp()).
 				Bool("marked_unread", conv.GetMarkedAsUnread()).
 				Bool("archived", conv.GetArchived()).
 				Uint32("pinned", conv.GetPinned()).
@@ -167,7 +165,7 @@ func (wa *WhatsAppClient) handleWAHistorySync(ctx context.Context, evt *waHistor
 			Msg("Collected messages to save from history sync conversation")
 
 		if len(messages) > 0 {
-			err = wa.Main.DB.Conversation.Put(ctx, wadb.NewConversation(wa.UserLogin.ID, jid, conv))
+			err = wa.Main.DB.Conversation.Put(ctx, wadb.NewConversation(wa.UserLogin.ID, jid, conv, maxTime))
 			if err != nil {
 				log.Err(err).Msg("Failed to save conversation metadata")
 				continue
@@ -216,6 +214,10 @@ func (wa *WhatsAppClient) createPortalsFromHistorySync(ctx context.Context) {
 		if conv.ChatJID == types.StatusBroadcastJID && !wa.Main.Config.EnableStatusBroadcast {
 			wg.Done()
 			continue
+		} else if conv.ChatJID == types.PSAJID {
+			// We don't currently support new PSAs, so don't bother backfilling them either
+			wg.Done()
+			continue
 		}
 		// TODO can the chat info fetch be avoided entirely?
 		time.Sleep(time.Duration(rateLimitErrors) * time.Second)
@@ -248,8 +250,12 @@ func (wa *WhatsAppClient) createPortalsFromHistorySync(ctx context.Context) {
 		}
 		wa.Main.Bridge.QueueRemoteEvent(wa.UserLogin, &simplevent.ChatResync{
 			EventMeta: simplevent.EventMeta{
-				Type:         bridgev2.RemoteEventChatResync,
-				LogContext:   nil,
+				Type: bridgev2.RemoteEventChatResync,
+				LogContext: func(c zerolog.Context) zerolog.Context {
+					return c.
+						Stringer("chat_jid", conv.ChatJID).
+						Time("latest_message_ts", conv.LastMessageTimestamp)
+				},
 				PortalKey:    wa.makeWAPortalKey(conv.ChatJID),
 				CreatePortal: true,
 				PostHandleFunc: func(ctx context.Context, portal *bridgev2.Portal) {

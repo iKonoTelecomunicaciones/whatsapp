@@ -41,7 +41,7 @@ import (
 	"go.mau.fi/mautrix-whatsapp/pkg/waid"
 )
 
-func (wa *WhatsAppConnector) LoadUserLogin(_ context.Context, login *bridgev2.UserLogin) error {
+func (wa *WhatsAppConnector) LoadUserLogin(ctx context.Context, login *bridgev2.UserLogin) error {
 	w := &WhatsAppClient{
 		Main:      wa,
 		UserLogin: login,
@@ -60,7 +60,7 @@ func (wa *WhatsAppConnector) LoadUserLogin(_ context.Context, login *bridgev2.Us
 
 	var err error
 	w.JID = waid.ParseUserLoginID(login.ID, loginMetadata.WADeviceID)
-	w.Device, err = wa.DeviceStore.GetDevice(w.JID)
+	w.Device, err = wa.DeviceStore.GetDevice(ctx, w.JID)
 	if err != nil {
 		return err
 	}
@@ -71,6 +71,7 @@ func (wa *WhatsAppConnector) LoadUserLogin(_ context.Context, login *bridgev2.Us
 		w.Client.AddEventHandler(w.handleWAEvent)
 		if bridgev2.PortalEventBuffer == 0 {
 			w.Client.SynchronousAck = true
+			w.Client.EnableDecryptedEventBuffer = true
 		}
 		w.Client.AutomaticMessageRerequestFromPhone = true
 		w.Client.GetMessageForRetry = w.trackNotFoundRetry
@@ -104,9 +105,7 @@ type WhatsAppClient struct {
 	directMediaLock    sync.Mutex
 	mediaRetryLock     *semaphore.Weighted
 	offlineSyncWaiter  chan error
-
-	lastPhoneOfflineWarning time.Time
-	isNewLogin              bool
+	isNewLogin         bool
 }
 
 var (
@@ -223,7 +222,7 @@ func (wa *WhatsAppClient) ConnectBackground(ctx context.Context, params *bridgev
 		zerolog.Ctx(ctx).Err(err).Msg("Failed to update proxy")
 	}
 	wa.Client.GetClientPayload = func() *waWa6.ClientPayload {
-		payload := wa.Client.Store.GetClientPayload()
+		payload := wa.GetStore().GetClientPayload()
 		payload.ConnectReason = waWa6.ClientPayload_PUSH.Enum()
 		return payload
 	}
@@ -300,7 +299,6 @@ func (wa *WhatsAppClient) startLoops() {
 	}
 	go wa.historySyncLoop(ctx)
 	go wa.ghostResyncLoop(ctx)
-	go wa.disconnectWarningLoop(ctx)
 	if mrc := wa.Main.Config.HistorySync.MediaRequests; mrc.AutoRequestMedia && mrc.RequestMethod == MediaRequestMethodLocalTime {
 		go wa.mediaRequestLoop(ctx)
 	}
@@ -327,7 +325,7 @@ func (wa *WhatsAppClient) Disconnect() {
 
 func (wa *WhatsAppClient) LogoutRemote(ctx context.Context) {
 	if cli := wa.Client; cli != nil {
-		err := cli.Logout()
+		err := cli.Logout(ctx)
 		if err != nil {
 			zerolog.Ctx(ctx).Err(err).Msg("Failed to log out")
 		}
@@ -338,4 +336,39 @@ func (wa *WhatsAppClient) LogoutRemote(ctx context.Context) {
 
 func (wa *WhatsAppClient) IsLoggedIn() bool {
 	return wa.Client != nil && wa.Client.IsLoggedIn()
+}
+
+func (wa *WhatsAppClient) syncRemoteProfile(ctx context.Context, ghost *bridgev2.Ghost) {
+	ownID := waid.MakeUserID(wa.GetStore().GetJID())
+	if ghost == nil {
+		var err error
+		ghost, err = wa.Main.Bridge.GetExistingGhostByID(ctx, ownID)
+		if err != nil {
+			zerolog.Ctx(ctx).Err(err).Msg("Failed to get own ghost to sync remote profile")
+			return
+		} else if ghost == nil {
+			return
+		}
+	}
+	if ghost.ID != ownID {
+		return
+	}
+	name := wa.GetStore().BusinessName
+	if name == "" {
+		name = wa.GetStore().PushName
+	}
+	if name == "" || wa.UserLogin.RemoteProfile.Name == name && wa.UserLogin.RemoteProfile.Avatar == ghost.AvatarMXC {
+		return
+	}
+	wa.UserLogin.RemoteProfile.Name = name
+	wa.UserLogin.RemoteProfile.Avatar = ghost.AvatarMXC
+	err := wa.UserLogin.Save(ctx)
+	if err != nil {
+		zerolog.Ctx(ctx).Err(err).Msg("Failed to save remote profile")
+	}
+	// FIXME this might be racy, should invent a proper way to send last state with info filled
+	if wa.Client.IsConnected() {
+		wa.UserLogin.BridgeState.Send(status.BridgeState{StateEvent: status.StateConnected})
+	}
+	zerolog.Ctx(ctx).Info().Msg("Remote profile updated")
 }

@@ -26,6 +26,7 @@ import (
 	"strings"
 
 	"github.com/rs/zerolog"
+	"go.mau.fi/util/ptr"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
@@ -91,6 +92,14 @@ func (mc *MessageConverter) addMentions(ctx context.Context, mentionedJID []stri
 		into.Body = strings.ReplaceAll(into.Body, mentionText, displayname)
 		into.FormattedBody = strings.ReplaceAll(into.FormattedBody, mentionText, fmt.Sprintf(`<a href="%s">%s</a>`, mxid.URI().MatrixToURL(), html.EscapeString(displayname)))
 	}
+}
+
+var failedCommentPart = &bridgev2.ConvertedMessagePart{
+	Type: event.EventMessage,
+	Content: &event.MessageEventContent{
+		Body:    "Failed to decrypt comment",
+		MsgType: event.MsgNotice,
+	},
 }
 
 func (mc *MessageConverter) ToMatrix(
@@ -173,6 +182,8 @@ func (mc *MessageConverter) ToMatrix(
 		part, contextInfo = mc.convertGroupInviteMessage(ctx, info, waMsg.GroupInviteMessage)
 	case waMsg.ProtocolMessage != nil && waMsg.ProtocolMessage.GetType() == waE2E.ProtocolMessage_EPHEMERAL_SETTING:
 		return nil
+	case waMsg.EncCommentMessage != nil:
+		part = failedCommentPart
 	default:
 		part, contextInfo = mc.convertUnknownMessage(ctx, waMsg)
 	}
@@ -210,6 +221,33 @@ func (mc *MessageConverter) ToMatrix(
 		cm.ReplyTo = &networkid.MessageOptionalPartID{
 			MessageID: waid.MakeMessageID(chat, pcp, contextInfo.GetStanzaID()),
 		}
+	}
+	if contextInfo.GetIsForwarded() {
+		hasCaption := part.Content.FileName != "" && part.Content.FileName != part.Content.Body
+		isMedia := part.Content.MsgType.IsMedia()
+		isText := part.Content.MsgType.IsText()
+		if isMedia && !hasCaption {
+			part.Content.FileName = part.Content.Body
+			part.Content.Body = "↷ Forwarded"
+			part.Content.Format = event.FormatHTML
+			part.Content.FormattedBody = "<p data-mx-forwarded-notice><em>↷ Forwarded</em></p>"
+		} else if isText || isMedia {
+			part.Content.EnsureHasHTML()
+			part.Content.Body = "↷ Forwarded\n\n" + part.Content.Body
+			part.Content.FormattedBody = "<p data-mx-forwarded-notice><em>↷ Forwarded</em></p>" + part.Content.FormattedBody
+		}
+	}
+	commentTarget := waMsg.GetEncCommentMessage().GetTargetMessageKey()
+	if commentTarget == nil {
+		commentTarget = waMsg.GetCommentMessage().GetTargetMessageKey()
+	}
+	if commentTarget != nil {
+		pcp, _ := types.ParseJID(commentTarget.GetParticipant())
+		chat, _ := types.ParseJID(commentTarget.GetRemoteJID())
+		if chat.IsEmpty() {
+			chat, _ = waid.ParsePortalID(portal.ID)
+		}
+		cm.ThreadRoot = ptr.Ptr(waid.MakeMessageID(chat, pcp, commentTarget.GetID()))
 	}
 
 	return cm
