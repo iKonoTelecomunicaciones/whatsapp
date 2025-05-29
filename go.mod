@@ -2,7 +2,7 @@ module go.mau.fi/mautrix-whatsapp
 
 go 1.23.0
 
-toolchain go1.24.3
+toolchain go1.24.1
 
 require (
 	github.com/gorilla/mux v1.8.0
@@ -11,8 +11,8 @@ require (
 	github.com/rs/zerolog v1.34.0
 	go.mau.fi/util v0.8.7
 	go.mau.fi/webp v0.2.0
-	go.mau.fi/whatsmeow v0.0.0-20250515105332-8c870897140e
-	golang.org/x/image v0.27.0
+	go.mau.fi/whatsmeow v0.0.0-20250527134344-0b502af800ee
+	golang.org/x/image v0.25.0
 	golang.org/x/net v0.40.0
 	golang.org/x/sync v0.14.0
 	google.golang.org/protobuf v1.36.6
@@ -48,5 +48,4 @@ require (
 	maunium.net/go/mauflag v1.0.0 // indirect
 )
 
-// Remove this line to use the local version of golib
-replace maunium.net/go/mautrix => github.com/iKonoTelecomunicaciones/go v0.23.4
+replace maunium.net/go/mautrix => github.com/iKonoTelecomunicaciones/go v0.24.1
