@@ -472,7 +472,7 @@ func legacyProvSetPowerlevels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if powerLevel <= 0 {
+	if powerLevel < 0 {
 		exhttp.WriteJSONResponse(w, http.StatusBadRequest, Error{
 			Error:   "Invalid power level",
 			ErrCode: "invalid power level",
