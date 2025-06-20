@@ -27,8 +27,8 @@ import (
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 
-	"maunium.net/go/mautrix/bridgev2"
-	"maunium.net/go/mautrix/event"
+	"github.com/iKonoTelecomunicaciones/go/bridgev2"
+	"github.com/iKonoTelecomunicaciones/go/event"
 )
 
 func (mc *MessageConverter) convertTextMessage(ctx context.Context, msg *waE2E.Message) (part *bridgev2.ConvertedMessagePart, contextInfo *waE2E.ContextInfo) {

@@ -24,6 +24,11 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/iKonoTelecomunicaciones/go/bridgev2"
+	"github.com/iKonoTelecomunicaciones/go/bridgev2/commands"
+	"github.com/iKonoTelecomunicaciones/go/bridgev2/networkid"
+	"github.com/iKonoTelecomunicaciones/go/event"
+	"github.com/iKonoTelecomunicaciones/go/id"
 	"go.mau.fi/util/dbutil"
 	"go.mau.fi/util/random"
 	"go.mau.fi/whatsmeow"
@@ -33,14 +38,9 @@ import (
 	whatsmeowUpgrades "go.mau.fi/whatsmeow/store/sqlstore/upgrades"
 	waLog "go.mau.fi/whatsmeow/util/log"
 	"google.golang.org/protobuf/proto"
-	"maunium.net/go/mautrix/bridgev2"
-	"maunium.net/go/mautrix/bridgev2/commands"
-	"maunium.net/go/mautrix/bridgev2/networkid"
-	"maunium.net/go/mautrix/event"
-	"maunium.net/go/mautrix/id"
 
-	"go.mau.fi/mautrix-whatsapp/pkg/connector/wadb"
-	"go.mau.fi/mautrix-whatsapp/pkg/msgconv"
+	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/connector/wadb"
+	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/msgconv"
 )
 
 type WhatsAppConnector struct {

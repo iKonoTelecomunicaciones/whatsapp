@@ -4,9 +4,9 @@ import (
 	_ "embed"
 	"strings"
 
+	"github.com/iKonoTelecomunicaciones/go/bridgev2/bridgeconfig"
 	up "go.mau.fi/util/configupgrade"
 	"go.mau.fi/util/dbutil/litestream"
-	"maunium.net/go/mautrix/bridgev2/bridgeconfig"
 )
 
 const legacyMigrateRenameTables = `
@@ -41,7 +41,7 @@ func init() {
 }
 
 func migrateLegacyConfig(helper up.Helper) {
-	helper.Set(up.Str, "maunium.net/go/mautrix-whatsapp", "encryption", "pickle_key")
+	helper.Set(up.Str, "github.com/iKonoTelecomunicaciones/go-whatsapp", "encryption", "pickle_key")
 	bridgeconfig.CopyToOtherLocation(helper, up.Str, []string{"whatsapp", "os_name"}, []string{"network", "os_name"})
 	bridgeconfig.CopyToOtherLocation(helper, up.Str, []string{"whatsapp", "browser_name"}, []string{"network", "browser_name"})
 	bridgeconfig.CopyToOtherLocation(helper, up.Str, []string{"whatsapp", "proxy"}, []string{"network", "proxy"})

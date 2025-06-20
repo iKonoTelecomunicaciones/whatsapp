@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/iKonoTelecomunicaciones/go/bridgev2/networkid"
 	"go.mau.fi/util/dbutil"
 	"go.mau.fi/util/exslices"
 	"go.mau.fi/whatsmeow/proto/waHistorySync"
 	"go.mau.fi/whatsmeow/proto/waWeb"
 	"go.mau.fi/whatsmeow/types"
 	"google.golang.org/protobuf/proto"
-	"maunium.net/go/mautrix/bridgev2/networkid"
 )
 
 type MessageQuery struct {

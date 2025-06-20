@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/iKonoTelecomunicaciones/go/bridgev2/networkid"
 	"go.mau.fi/whatsmeow/types"
-	"maunium.net/go/mautrix/bridgev2/networkid"
 )
 
 func MakePortalID(jid types.JID) networkid.PortalID {
