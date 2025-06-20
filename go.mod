@@ -2,7 +2,7 @@ module github.com/iKonoTelecomunicaciones/whatsapp
 
 go 1.23.0
 
-toolchain go1.24.1
+toolchain go1.24.4
 
 require (
 	github.com/gorilla/mux v1.8.0
@@ -12,8 +12,8 @@ require (
 	github.com/rs/zerolog v1.34.0
 	go.mau.fi/util v0.8.8
 	go.mau.fi/webp v0.2.0
-	go.mau.fi/whatsmeow v0.0.0-20250527134344-0b502af800ee
-	golang.org/x/image v0.25.0
+	go.mau.fi/whatsmeow v0.0.0-20250616150942-80f2a1807103
+	golang.org/x/image v0.28.0
 	golang.org/x/net v0.41.0
 	golang.org/x/sync v0.15.0
 	google.golang.org/protobuf v1.36.6

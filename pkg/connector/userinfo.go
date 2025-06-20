@@ -20,11 +20,12 @@ import (
 	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/waid"
 )
 
-const resyncMinInterval = 7 * 24 * time.Hour
-const resyncLoopInterval = 4 * time.Hour
+var ResyncMinInterval = 7 * 24 * time.Hour
+var ResyncLoopInterval = 4 * time.Hour
+var ResyncJitterSeconds = 3600
 
 func (wa *WhatsAppClient) EnqueueGhostResync(ghost *bridgev2.Ghost) {
-	if ghost.Metadata.(*waid.GhostMetadata).LastSync.Add(resyncMinInterval).After(time.Now()) {
+	if ghost.Metadata.(*waid.GhostMetadata).LastSync.Add(ResyncMinInterval).After(time.Now()) {
 		return
 	}
 	wa.resyncQueueLock.Lock()
@@ -41,7 +42,7 @@ func (wa *WhatsAppClient) EnqueueGhostResync(ghost *bridgev2.Ghost) {
 
 func (wa *WhatsAppClient) EnqueuePortalResync(portal *bridgev2.Portal) {
 	jid, _ := waid.ParsePortalID(portal.ID)
-	if jid.Server != types.GroupServer || portal.Metadata.(*waid.PortalMetadata).LastSync.Add(resyncMinInterval).After(time.Now()) {
+	if jid.Server != types.GroupServer || portal.Metadata.(*waid.PortalMetadata).LastSync.Add(ResyncMinInterval).After(time.Now()) {
 		return
 	}
 	wa.resyncQueueLock.Lock()
@@ -58,7 +59,7 @@ func (wa *WhatsAppClient) EnqueuePortalResync(portal *bridgev2.Portal) {
 func (wa *WhatsAppClient) ghostResyncLoop(ctx context.Context) {
 	log := wa.UserLogin.Log.With().Str("action", "ghost resync loop").Logger()
 	ctx = log.WithContext(ctx)
-	wa.nextResync = time.Now().Add(resyncLoopInterval).Add(-time.Duration(rand.IntN(3600)) * time.Second)
+	wa.nextResync = time.Now().Add(ResyncLoopInterval).Add(-time.Duration(rand.IntN(ResyncJitterSeconds)) * time.Second)
 	timer := time.NewTimer(time.Until(wa.nextResync))
 	log.Info().Time("first_resync", wa.nextResync).Msg("Ghost resync queue starting")
 	for {
@@ -81,7 +82,7 @@ func (wa *WhatsAppClient) ghostResyncLoop(ctx context.Context) {
 func (wa *WhatsAppClient) rotateResyncQueue() map[types.JID]resyncQueueItem {
 	wa.resyncQueueLock.Lock()
 	defer wa.resyncQueueLock.Unlock()
-	wa.nextResync = time.Now().Add(resyncLoopInterval)
+	wa.nextResync = time.Now().Add(ResyncLoopInterval)
 	if len(wa.resyncQueue) == 0 {
 		return nil
 	}
@@ -108,7 +109,7 @@ func (wa *WhatsAppClient) doGhostResync(ctx context.Context, queue map[types.JID
 		} else if item.portal != nil {
 			lastSync = item.portal.Metadata.(*waid.PortalMetadata).LastSync.Time
 		}
-		if lastSync.Add(resyncMinInterval).After(time.Now()) {
+		if lastSync.Add(ResyncMinInterval).After(time.Now()) {
 			log.Debug().
 				Stringer("jid", jid).
 				Time("last_sync", lastSync).
@@ -160,7 +161,7 @@ func (wa *WhatsAppClient) doGhostResync(ctx context.Context, queue map[types.JID
 }
 
 func (wa *WhatsAppClient) GetUserInfo(ctx context.Context, ghost *bridgev2.Ghost) (*bridgev2.UserInfo, error) {
-	if ghost.Name != "" {
+	if ghost.Name != "" && ghost.NameSet {
 		wa.EnqueueGhostResync(ghost)
 		return nil, nil
 	}
@@ -189,7 +190,7 @@ func (wa *WhatsAppClient) contactToUserInfo(ctx context.Context, jid types.JID, 
 		pnJID, err := wa.GetStore().LIDs.GetPNForLID(ctx, jid)
 		if err != nil {
 			zerolog.Ctx(ctx).Err(err).Stringer("lid", jid).Msg("Failed to get PN for LID")
-		} else {
+		} else if !pnJID.IsEmpty() {
 			phone = "+" + pnJID.User
 			extraContact, err := wa.GetStore().Contacts.GetContact(ctx, pnJID)
 			if err != nil {
@@ -216,11 +217,12 @@ func (wa *WhatsAppClient) contactToUserInfo(ctx context.Context, jid types.JID, 
 	ui := &bridgev2.UserInfo{
 		Name:         ptr.Ptr(wa.Main.Config.FormatDisplayname(jid, phone, contact)),
 		IsBot:        ptr.Ptr(jid.IsBot()),
-		Identifiers:  []string{fmt.Sprintf("tel:+%s", jid.User)},
 		ExtraUpdates: updateGhostLastSyncAt,
 	}
 	if jid.Server == types.BotServer {
 		ui.Identifiers = []string{}
+	} else if phone != "" {
+		ui.Identifiers = []string{fmt.Sprintf("tel:%s", phone)}
 	}
 	if getAvatar {
 		ui.ExtraUpdates = bridgev2.MergeExtraUpdaters(ui.ExtraUpdates, wa.fetchGhostAvatar)

@@ -256,12 +256,34 @@ func (wa *WhatsAppClient) handleWAEvent(rawEvt any) {
 }
 
 func (wa *WhatsAppClient) handleWAMessage(ctx context.Context, evt *events.Message) {
+	if evt.Info.Chat.Server == types.HiddenUserServer && evt.Info.Sender.ToNonAD() == evt.Info.Chat && evt.Info.SenderAlt.Server == types.DefaultUserServer {
+		wa.UserLogin.Log.Debug().
+			Stringer("lid", evt.Info.Sender).
+			Stringer("pn", evt.Info.SenderAlt).
+			Str("message_id", evt.Info.ID).
+			Msg("Forced LID DM sender to phone number in incoming message")
+		evt.Info.Sender, evt.Info.SenderAlt = evt.Info.SenderAlt, evt.Info.Sender
+		evt.Info.Chat = evt.Info.Sender.ToNonAD()
+	} else if evt.Info.Chat.Server == types.HiddenUserServer && evt.Info.IsFromMe && evt.Info.RecipientAlt.Server == types.DefaultUserServer {
+		wa.UserLogin.Log.Debug().
+			Stringer("lid", evt.Info.Chat).
+			Stringer("pn", evt.Info.RecipientAlt).
+			Str("message_id", evt.Info.ID).
+			Msg("Forced LID DM sender to phone number in own message sent from another device")
+		evt.Info.Chat = evt.Info.RecipientAlt.ToNonAD()
+	}
 	wa.UserLogin.Log.Trace().
 		Any("info", evt.Info).
 		Any("payload", evt.Message).
 		Msg("Received WhatsApp message")
 	if evt.Info.Chat == types.StatusBroadcastJID && !wa.Main.Config.EnableStatusBroadcast {
 		return
+	}
+	if evt.Info.IsFromMe &&
+		evt.Message.GetProtocolMessage().GetHistorySyncNotification() != nil &&
+		wa.Main.Bridge.Config.Backfill.Enabled &&
+		wa.Client.ManualHistorySyncDownload {
+		wa.saveWAHistorySyncNotification(ctx, evt.Message.ProtocolMessage.HistorySyncNotification)
 	}
 	parsedMessageType := getMessageType(evt.Message)
 	if parsedMessageType == "ignore" || strings.HasPrefix(parsedMessageType, "unknown_protocol_") {
@@ -320,6 +342,22 @@ func (wa *WhatsAppClient) handleWAUndecryptableMessage(evt *events.Undecryptable
 }
 
 func (wa *WhatsAppClient) handleWAReceipt(evt *events.Receipt) {
+	if evt.Chat.Server == types.HiddenUserServer && evt.Sender.ToNonAD() == evt.Chat && evt.SenderAlt.Server == types.DefaultUserServer {
+		wa.UserLogin.Log.Debug().
+			Stringer("lid", evt.Sender).
+			Stringer("pn", evt.SenderAlt).
+			Strs("message_id", evt.MessageIDs).
+			Msg("Forced LID DM sender to phone number in incoming receipt")
+		evt.Sender, evt.SenderAlt = evt.SenderAlt, evt.Sender
+		evt.Chat = evt.Sender.ToNonAD()
+	} else if evt.Chat.Server == types.HiddenUserServer && evt.IsFromMe && evt.RecipientAlt.Server == types.DefaultUserServer {
+		wa.UserLogin.Log.Debug().
+			Stringer("lid", evt.Chat).
+			Stringer("pn", evt.RecipientAlt).
+			Strs("message_id", evt.MessageIDs).
+			Msg("Forced LID DM sender to phone number in own receipt sent from another device")
+		evt.Chat = evt.RecipientAlt.ToNonAD()
+	}
 	if evt.IsFromMe && evt.Sender.Device == 0 {
 		wa.phoneSeen(evt.Timestamp)
 	}
