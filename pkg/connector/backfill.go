@@ -38,12 +38,35 @@ func (wa *WhatsAppClient) historySyncLoop(ctx context.Context) {
 	} else {
 		dispatchTimer.Stop()
 	}
+	if wa.Client.ManualHistorySyncDownload {
+		// Wake up the queue once to check if there are pending notifications
+		select {
+		case wa.historySyncWakeup <- struct{}{}:
+		default:
+		}
+	}
 	wa.UserLogin.Log.Debug().Msg("Starting history sync loop")
 	for {
 		select {
 		case evt := <-wa.historySyncs:
 			dispatchTimer.Stop()
-			wa.handleWAHistorySync(ctx, evt)
+			_ = wa.handleWAHistorySync(ctx, evt, false)
+			dispatchTimer.Reset(historySyncDispatchWait)
+		case <-wa.historySyncWakeup:
+			dispatchTimer.Stop()
+			notif, rowid, err := wa.Main.DB.HSNotif.GetNext(ctx, wa.UserLogin.ID)
+			if err != nil {
+				wa.UserLogin.Log.Err(err).Msg("Failed to get next history sync notification")
+			} else if notif == nil {
+				wa.UserLogin.Log.Debug().Msg("No more queued history sync notifications")
+			} else {
+				wa.downloadAndSaveWAHistorySyncData(ctx, notif, rowid)
+				// Continue waking up the loop until all queued notifications are processed
+				select {
+				case wa.historySyncWakeup <- struct{}{}:
+				default:
+				}
+			}
 			dispatchTimer.Reset(historySyncDispatchWait)
 		case <-dispatchTimer.C:
 			wa.createPortalsFromHistorySync(ctx)
@@ -54,9 +77,55 @@ func (wa *WhatsAppClient) historySyncLoop(ctx context.Context) {
 	}
 }
 
-func (wa *WhatsAppClient) handleWAHistorySync(ctx context.Context, evt *waHistorySync.HistorySync) {
-	if evt == nil || evt.SyncType == nil {
+func (wa *WhatsAppClient) saveWAHistorySyncNotification(ctx context.Context, evt *waE2E.HistorySyncNotification) {
+	err := wa.Main.DB.HSNotif.Put(ctx, wa.UserLogin.ID, evt)
+	if err != nil {
+		wa.UserLogin.Log.Err(err).Msg("Failed to store history sync notification in queue")
 		return
+	}
+	wa.UserLogin.Log.Debug().
+		Stringer("sync_type", evt.GetSyncType()).
+		Uint32("chunk_order", evt.GetChunkOrder()).
+		Uint32("progress", evt.GetProgress()).
+		Msg("Stored history sync notification in queue")
+	select {
+	case wa.historySyncWakeup <- struct{}{}:
+	default:
+	}
+}
+
+func (wa *WhatsAppClient) downloadAndSaveWAHistorySyncData(ctx context.Context, evt *waE2E.HistorySyncNotification, rowid int) {
+	log := wa.UserLogin.Log.With().
+		Str("action", "download history sync").
+		Stringer("sync_type", evt.GetSyncType()).
+		Uint32("chunk_order", evt.GetChunkOrder()).
+		Uint32("progress", evt.GetProgress()).
+		Logger()
+	log.Debug().Msg("Downloading history sync")
+	blob, err := wa.Client.DownloadHistorySync(log.WithContext(ctx), evt, true)
+	if err != nil {
+		log.Err(err).Msg("Failed to download history sync")
+		return
+	}
+	err = wa.Main.DB.DoTxn(ctx, nil, func(ctx context.Context) error {
+		err := wa.handleWAHistorySync(ctx, blob, true)
+		if err != nil {
+			return err
+		}
+		err = wa.Main.DB.HSNotif.Delete(ctx, rowid)
+		if err != nil {
+			return fmt.Errorf("failed to delete queued history sync notification: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		log.Err(err).Msg("Failed to store history sync notification data")
+	}
+}
+
+func (wa *WhatsAppClient) handleWAHistorySync(ctx context.Context, evt *waHistorySync.HistorySync, stopOnError bool) error {
+	if evt == nil || evt.SyncType == nil {
+		return nil
 	}
 	log := wa.UserLogin.Log.With().
 		Str("action", "store history sync").
@@ -76,12 +145,13 @@ func (wa *WhatsAppClient) handleWAHistorySync(ctx context.Context, evt *waHistor
 			Int("recent_sticker_count", len(evt.GetRecentStickers())).
 			Int("past_participant_count", len(evt.GetPastParticipants())).
 			Msg("Ignoring history sync")
-		return
+		return nil
 	}
 	log.Info().
 		Int("conversation_count", len(evt.GetConversations())).
 		Int("past_participant_count", len(evt.GetPastParticipants())).
 		Msg("Storing history sync")
+	start := time.Now()
 	successfullySavedTotal := 0
 	failedToSaveTotal := 0
 	totalMessageCount := 0
@@ -167,11 +237,17 @@ func (wa *WhatsAppClient) handleWAHistorySync(ctx context.Context, evt *waHistor
 		if len(messages) > 0 {
 			err = wa.Main.DB.Conversation.Put(ctx, wadb.NewConversation(wa.UserLogin.ID, jid, conv, maxTime))
 			if err != nil {
+				if stopOnError {
+					return fmt.Errorf("failed to save conversation metadata for %s: %w", jid, err)
+				}
 				log.Err(err).Msg("Failed to save conversation metadata")
 				continue
 			}
 			err = wa.Main.DB.Message.Put(ctx, wa.UserLogin.ID, jid, messages)
 			if err != nil {
+				if stopOnError {
+					return fmt.Errorf("failed to save messages in %s: %w", jid, err)
+				}
 				log.Err(err).Msg("Failed to save messages")
 				failedToSaveTotal += len(messages)
 			} else {
@@ -183,7 +259,9 @@ func (wa *WhatsAppClient) handleWAHistorySync(ctx context.Context, evt *waHistor
 		Int("total_saved_count", successfullySavedTotal).
 		Int("total_failed_count", failedToSaveTotal).
 		Int("total_message_count", totalMessageCount).
+		Dur("duration", time.Since(start)).
 		Msg("Finished storing history sync")
+	return nil
 }
 
 func (wa *WhatsAppClient) createPortalsFromHistorySync(ctx context.Context) {
@@ -192,13 +270,15 @@ func (wa *WhatsAppClient) createPortalsFromHistorySync(ctx context.Context) {
 		Logger()
 	ctx = log.WithContext(ctx)
 	limit := wa.Main.Config.HistorySync.MaxInitialConversations
-	log.Info().Int("limit", limit).Msg("Creating portals from history sync")
 	conversations, err := wa.Main.DB.Conversation.GetRecent(ctx, wa.UserLogin.ID, limit)
 	if err != nil {
 		log.Err(err).Msg("Failed to get recent conversations from database")
 		return
 	}
-	log.Info().Int("conversation_count", len(conversations)).Msg("Creating portals from history sync")
+	log.Info().
+		Int("limit", limit).
+		Int("conversation_count", len(conversations)).
+		Msg("Creating portals from history sync")
 	rateLimitErrors := 0
 	var wg sync.WaitGroup
 	wg.Add(len(conversations))
@@ -220,7 +300,12 @@ func (wa *WhatsAppClient) createPortalsFromHistorySync(ctx context.Context) {
 			continue
 		}
 		// TODO can the chat info fetch be avoided entirely?
-		time.Sleep(time.Duration(rateLimitErrors) * time.Second)
+		select {
+		case <-time.After(time.Duration(rateLimitErrors) * time.Second):
+		case <-ctx.Done():
+			log.Warn().Err(ctx.Err()).Msg("Context cancelled, stopping history sync portal creation")
+			return
+		}
 		wrappedInfo, err := wa.getChatInfo(ctx, conv.ChatJID, conv)
 		if errors.Is(err, whatsmeow.ErrNotInGroup) {
 			log.Debug().Stringer("chat_jid", conv.ChatJID).
@@ -241,7 +326,12 @@ func (wa *WhatsAppClient) createPortalsFromHistorySync(ctx context.Context) {
 			log.Err(err).Stringer("chat_jid", conv.ChatJID).
 				Int("error_count", rateLimitErrors).
 				Msg("Ratelimit error getting chat info, retrying after sleep")
-			time.Sleep(time.Duration(rateLimitErrors) * time.Minute)
+			select {
+			case <-time.After(time.Duration(rateLimitErrors) * time.Second):
+			case <-ctx.Done():
+				log.Warn().Err(ctx.Err()).Msg("Context cancelled, stopping history sync portal creation")
+				return
+			}
 			continue
 		} else if err != nil {
 			log.Err(err).Stringer("chat_jid", conv.ChatJID).Msg("Failed to get chat info")
