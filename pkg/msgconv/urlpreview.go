@@ -26,13 +26,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/iKonoTelecomunicaciones/go/bridgev2"
+	"github.com/iKonoTelecomunicaciones/go/event"
 	"github.com/rs/zerolog"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"golang.org/x/net/idna"
 	"google.golang.org/protobuf/proto"
-	"maunium.net/go/mautrix/bridgev2"
-	"maunium.net/go/mautrix/event"
 )
 
 func (mc *MessageConverter) convertURLPreviewToBeeper(ctx context.Context, msg *waE2E.ExtendedTextMessage) []*event.BeeperLinkPreview {

@@ -21,12 +21,12 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/iKonoTelecomunicaciones/go/bridgev2"
+	"github.com/iKonoTelecomunicaciones/go/event"
+	"github.com/iKonoTelecomunicaciones/go/format"
 	"go.mau.fi/util/random"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
-	"maunium.net/go/mautrix/bridgev2"
-	"maunium.net/go/mautrix/event"
-	"maunium.net/go/mautrix/format"
 )
 
 func (mc *MessageConverter) convertTemplateMessage(ctx context.Context, info *types.MessageInfo, tplMsg *waE2E.TemplateMessage) (*bridgev2.ConvertedMessagePart, *waE2E.ContextInfo) {

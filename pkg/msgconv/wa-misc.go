@@ -24,17 +24,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/iKonoTelecomunicaciones/go/bridgev2"
+	"github.com/iKonoTelecomunicaciones/go/event"
+	"github.com/iKonoTelecomunicaciones/go/format"
 	"github.com/rs/zerolog"
 	"go.mau.fi/util/exerrors"
 	"go.mau.fi/util/ptr"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	"google.golang.org/protobuf/proto"
-	"maunium.net/go/mautrix/bridgev2"
-	"maunium.net/go/mautrix/event"
-	"maunium.net/go/mautrix/format"
 
-	"go.mau.fi/mautrix-whatsapp/pkg/waid"
+	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/waid"
 )
 
 func (mc *MessageConverter) convertUnknownMessage(ctx context.Context, msg *waE2E.Message) (*bridgev2.ConvertedMessagePart, *waE2E.ContextInfo) {

@@ -3,7 +3,7 @@ if ! [ $(git config --global --get safe.directory) ]; then
     echo "Setting safe.directory config to /build"
     git config --global --add safe.directory /build
 fi
-MAUTRIX_NAME='maunium.net/go/mautrix'
+MAUTRIX_NAME='github.com/iKonoTelecomunicaciones/go'
 MAUTRIX_VERSION=$(cat go.mod | grep $MAUTRIX_NAME | awk '{ print $2 }' | head -n1)
 GO_LDFLAGS="
     -s -w \

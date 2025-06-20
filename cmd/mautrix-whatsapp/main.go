@@ -3,11 +3,11 @@ package main
 import (
 	"net/http"
 
-	"maunium.net/go/mautrix/bridgev2/bridgeconfig"
-	"maunium.net/go/mautrix/bridgev2/matrix/mxmain"
+	"github.com/iKonoTelecomunicaciones/go/bridgev2/bridgeconfig"
+	"github.com/iKonoTelecomunicaciones/go/bridgev2/matrix/mxmain"
 
-	"go.mau.fi/mautrix-whatsapp/pkg/connector"
-	"go.mau.fi/mautrix-whatsapp/pkg/connector/wadb/upgrades"
+	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/connector"
+	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/connector/wadb/upgrades"
 )
 
 // Information to find out exactly which commit the bridge was built from.

@@ -5,12 +5,12 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/iKonoTelecomunicaciones/go/event"
 	up "go.mau.fi/util/configupgrade"
 	"go.mau.fi/whatsmeow/types"
 	"gopkg.in/yaml.v3"
-	"maunium.net/go/mautrix/event"
 
-	"go.mau.fi/mautrix-whatsapp/pkg/msgconv"
+	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/msgconv"
 )
 
 type MediaRequestMethod string

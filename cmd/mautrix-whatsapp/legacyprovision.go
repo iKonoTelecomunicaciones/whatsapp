@@ -9,21 +9,21 @@ import (
 	"strings"
 	"time"
 
-	"maunium.net/go/mautrix/event"
+	mautrix "github.com/iKonoTelecomunicaciones/go"
+	"github.com/iKonoTelecomunicaciones/go/event"
 
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
+	"github.com/iKonoTelecomunicaciones/go/bridgev2"
+	"github.com/iKonoTelecomunicaciones/go/bridgev2/matrix"
+	"github.com/iKonoTelecomunicaciones/go/bridgev2/status"
+	"github.com/iKonoTelecomunicaciones/go/id"
 	"github.com/rs/zerolog/hlog"
 	"go.mau.fi/util/exhttp"
 	"go.mau.fi/whatsmeow/types"
-	"maunium.net/go/mautrix"
-	"maunium.net/go/mautrix/bridgev2"
-	"maunium.net/go/mautrix/bridgev2/matrix"
-	"maunium.net/go/mautrix/bridgev2/status"
-	"maunium.net/go/mautrix/id"
 
-	"go.mau.fi/mautrix-whatsapp/pkg/connector"
-	"go.mau.fi/mautrix-whatsapp/pkg/waid"
+	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/connector"
+	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/waid"
 )
 
 var upgrader = websocket.Upgrader{
