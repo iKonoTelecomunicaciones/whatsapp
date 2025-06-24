@@ -91,7 +91,7 @@ type Response struct {
 	Status  string `json:"status"`
 }
 
-type PowerLevelBody struct {
+type SetEventBody struct {
 	RoomID     string `json:"room_id"`
 	PowerLevel int    `json:"power_level"`
 	UserID     string `json:"user_id"`
@@ -446,7 +446,7 @@ func legacyProvRoomInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 func legacyProvSetPowerlevels(w http.ResponseWriter, r *http.Request) {
-	var body PowerLevelBody
+	var body SetEventBody
 	err := json.NewDecoder(r.Body).Decode(&body)
 
 	if err != nil {
@@ -550,7 +550,7 @@ func legacyProvSetPowerlevels(w http.ResponseWriter, r *http.Request) {
 }
 
 func legacyProvSetRelay(w http.ResponseWriter, r *http.Request) {
-	var body PowerLevelBody
+	var body SetEventBody
 	err := json.NewDecoder(r.Body).Decode(&body)
 
 	if err != nil {
