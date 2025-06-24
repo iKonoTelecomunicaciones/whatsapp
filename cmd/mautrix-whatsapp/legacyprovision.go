@@ -91,7 +91,7 @@ type Response struct {
 	Status  string `json:"status"`
 }
 
-type PowerLevelBody struct {
+type SetEventBody struct {
 	RoomID     string `json:"room_id"`
 	PowerLevel int    `json:"power_level"`
 	UserID     string `json:"user_id"`
@@ -446,7 +446,7 @@ func legacyProvRoomInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 func legacyProvSetPowerlevels(w http.ResponseWriter, r *http.Request) {
-	var body PowerLevelBody
+	var body SetEventBody
 	err := json.NewDecoder(r.Body).Decode(&body)
 
 	if err != nil {
@@ -543,6 +543,68 @@ func legacyProvSetPowerlevels(w http.ResponseWriter, r *http.Request) {
 		Success: true,
 		Status: "Successfully updated power level for user " + userID +
 			". Event ID: " + event.EventID.String() + " room ID: " + roomID,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	exhttp.WriteJSONResponse(w, http.StatusOK, resp)
+}
+
+func legacyProvSetRelay(w http.ResponseWriter, r *http.Request) {
+	var body SetEventBody
+	err := json.NewDecoder(r.Body).Decode(&body)
+
+	if err != nil {
+		http.Error(w, "Can't read body", http.StatusBadRequest)
+		return
+	}
+
+	log := hlog.FromRequest(r)
+	userLogin := m.Matrix.Provisioning.GetLoginForRequest(w, r)
+	if userLogin == nil {
+		return
+	}
+
+	roomID := body.RoomID
+	if roomID == "" {
+		exhttp.WriteJSONResponse(w, http.StatusBadRequest, Error{
+			Error:   "Missing room_id",
+			ErrCode: "missing room_id",
+		})
+		return
+	}
+
+	// Get the portal by room ID
+	portal, err := m.Bridge.GetPortalByMXID(r.Context(), id.RoomID(roomID))
+
+	if err != nil {
+		exhttp.WriteJSONResponse(w, http.StatusInternalServerError, Error{
+			Error:   "Error while fetching portal",
+			ErrCode: "failed to get portal",
+		})
+		return
+	}
+	if portal == nil {
+		exhttp.WriteJSONResponse(w, http.StatusNotFound, Error{
+			Error:   "Portal not found",
+			ErrCode: "portal not found",
+		})
+		return
+	}
+
+	err = portal.SetRelay(r.Context(), userLogin)
+
+	if err != nil {
+		log.Error().Err(err).Msg("Error while setting relay")
+		exhttp.WriteJSONResponse(w, http.StatusInternalServerError, Error{
+			Error:   "Error while setting relay",
+			ErrCode: "failed to set relay",
+		})
+		return
+	}
+
+	resp := Response{
+		Success: true,
+		Status:  "Successfully set relay for room " + roomID,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
