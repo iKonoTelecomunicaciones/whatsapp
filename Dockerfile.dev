@@ -1,4 +1,4 @@
-FROM golang:1-alpine3.20 AS builder
+FROM golang:1-alpine3.22 AS builder
 
 RUN apk add --no-cache git ca-certificates build-base su-exec olm-dev ffmpeg su-exec \
     ca-certificates olm bash jq yq curl
