@@ -32,9 +32,13 @@ func (wa *WhatsAppClient) EnqueueGhostResync(ghost *bridgev2.Ghost) {
 	jid := waid.ParseUserID(ghost.ID)
 	if _, exists := wa.resyncQueue[jid]; !exists {
 		wa.resyncQueue[jid] = resyncQueueItem{ghost: ghost}
+		nextResyncIn := time.Until(wa.nextResync).String()
+		if wa.nextResync.IsZero() {
+			nextResyncIn = "never"
+		}
 		wa.UserLogin.Log.Debug().
 			Stringer("jid", jid).
-			Stringer("next_resync_in", time.Until(wa.nextResync)).
+			Str("next_resync_in", nextResyncIn).
 			Msg("Enqueued resync for ghost")
 	}
 	wa.resyncQueueLock.Unlock()
@@ -124,7 +128,7 @@ func (wa *WhatsAppClient) doGhostResync(ctx context.Context, queue map[types.JID
 		}
 	}
 	for _, portal := range portals {
-		wa.Main.Bridge.QueueRemoteEvent(wa.UserLogin, &simplevent.ChatResync{
+		wa.UserLogin.QueueRemoteEvent(&simplevent.ChatResync{
 			EventMeta: simplevent.EventMeta{
 				Type: bridgev2.RemoteEventChatResync,
 				LogContext: func(c zerolog.Context) zerolog.Context {
