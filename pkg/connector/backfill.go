@@ -338,7 +338,7 @@ func (wa *WhatsAppClient) createPortalsFromHistorySync(ctx context.Context) {
 			wg.Done()
 			continue
 		}
-		wa.Main.Bridge.QueueRemoteEvent(wa.UserLogin, &simplevent.ChatResync{
+		res := wa.UserLogin.QueueRemoteEvent(&simplevent.ChatResync{
 			EventMeta: simplevent.EventMeta{
 				Type: bridgev2.RemoteEventChatResync,
 				LogContext: func(c zerolog.Context) zerolog.Context {
@@ -359,6 +359,10 @@ func (wa *WhatsAppClient) createPortalsFromHistorySync(ctx context.Context) {
 			ChatInfo:        wrappedInfo,
 			LatestMessageTS: conv.LastMessageTimestamp,
 		})
+		if !res.Success {
+			log.Debug().Msg("Cancelling history sync portal creation loop")
+			return
+		}
 	}
 	log.Info().Int("conversation_count", len(conversations)).Msg("Finished creating portals from history sync")
 	go func() {
@@ -482,7 +486,7 @@ func (wa *WhatsAppClient) convertHistorySyncMessage(
 	intent := wa.Main.Bridge.Bot
 	wrapped := &bridgev2.BackfillMessage{
 		ConvertedMessage: wa.Main.MsgConv.ToMatrix(ctx, portal, wa.Client, intent, msg, info, isViewOnce, nil),
-		Sender:           wa.makeEventSender(info.Sender),
+		Sender:           wa.makeEventSender(ctx, info.Sender),
 		ID:               waid.MakeMessageID(info.Chat, info.Sender, info.ID),
 		TxnID:            networkid.TransactionID(waid.MakeMessageID(info.Chat, info.Sender, info.ID)),
 		Timestamp:        info.Timestamp,
@@ -505,7 +509,7 @@ func (wa *WhatsAppClient) convertHistorySyncMessage(
 		wrapped.Reactions[i] = &bridgev2.BackfillReaction{
 			TargetPart: ptr.Ptr(networkid.PartID("")),
 			Timestamp:  time.UnixMilli(reaction.GetSenderTimestampMS()),
-			Sender:     wa.makeEventSender(sender),
+			Sender:     wa.makeEventSender(ctx, sender),
 			Emoji:      reaction.GetText(),
 		}
 	}
