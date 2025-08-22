@@ -18,6 +18,8 @@ github.com/gorilla/websocket v1.5.0 h1:PPwGk2jz7EePpoHN/+ClbZu8SPxiqlu12wZP/3sWm
 github.com/gorilla/websocket v1.5.0/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
 github.com/iKonoTelecomunicaciones/go v0.24.2 h1:8IX2PkUsnzcncwQq1BKxvuJvHwAypDThNkCphFdMu9w=
 github.com/iKonoTelecomunicaciones/go v0.24.2/go.mod h1:z9IkHfrQgqX6rQMK+sGPIy83VH6RkqJn6LQ2kr4okFI=
+github.com/iKonoTelecomunicaciones/go v0.24.3 h1:CaI6Bcr44pS2TzNR8t/oUBqErm6O8IOdY1aQaRCzbps=
+github.com/iKonoTelecomunicaciones/go v0.24.3/go.mod h1:bX5UzOBorUVoP5X1Q3S0FE/dlfq3pRx9JGGjJO5FNgI=
 github.com/kr/pretty v0.2.1/go.mod h1:ipq/a2n7PKx3OHsz4KJII5eveXtPO4qwEXGdVfWzfnI=
 github.com/kr/pretty v0.3.1 h1:flRD4NNwYAUpkphVc1HcthR4KEIFJ65n8Mw5qdRn3LE=
 github.com/kr/pretty v0.3.1/go.mod h1:hoEshYVHaxMs3cyo3Yncou5ZscifuDolrwPKZanG3xk=
