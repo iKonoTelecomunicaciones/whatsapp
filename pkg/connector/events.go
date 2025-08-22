@@ -151,6 +151,13 @@ func (evt *WAMessageEvent) PreHandle(ctx context.Context, portal *bridgev2.Porta
 	log.Info().Msg("Resyncing group members as it appears to have switched to LID addressing mode")
 	portal.UpdateInfo(ctx, evt.wa.wrapGroupInfo(ctx, info), evt.wa.UserLogin, nil, time.Time{})
 	log.Debug().Msg("Finished resyncing after LID change")
+	if evt.Info.Sender.Server == types.DefaultUserServer && evt.Info.SenderAlt.Server == types.HiddenUserServer {
+		evt.Info.Sender, evt.Info.SenderAlt = evt.Info.SenderAlt, evt.Info.Sender
+		log.Debug().
+			Stringer("new_sender", evt.Info.Sender).
+			Stringer("new_sender_alt", evt.Info.SenderAlt).
+			Msg("Overriding sender to LID after resyncing group members")
+	}
 }
 
 func (evt *WAMessageEvent) PostHandle(ctx context.Context, portal *bridgev2.Portal) {
@@ -179,7 +186,10 @@ func (evt *WAMessageEvent) ConvertEdit(ctx context.Context, portal *bridgev2.Por
 		meta.Edits = append(meta.Edits, evt.Info.ID)
 	}
 
-	cm := evt.wa.Main.MsgConv.ToMatrix(ctx, portal, evt.wa.Client, intent, editedMsg, &evt.Info, evt.isViewOnce(), previouslyConvertedPart)
+	ctx = context.WithValue(ctx, msgconv.ContextKeyEditTargetID, evt.Message.GetProtocolMessage().GetKey().GetID())
+	cm := evt.wa.Main.MsgConv.ToMatrix(
+		ctx, portal, evt.wa.Client, intent, editedMsg, evt.MsgEvent.RawMessage, &evt.Info, evt.isViewOnce(), previouslyConvertedPart,
+	)
 	if evt.isUndecryptableUpsertSubEvent && isFailedMedia(cm) {
 		evt.postHandle = func() {
 			evt.wa.processFailedMedia(ctx, portal.PortalKey, evt.GetID(), cm, false)
@@ -254,7 +264,9 @@ func (evt *WAMessageEvent) HandleExisting(ctx context.Context, portal *bridgev2.
 
 func (evt *WAMessageEvent) ConvertMessage(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI) (*bridgev2.ConvertedMessage, error) {
 	evt.wa.EnqueuePortalResync(portal)
-	converted := evt.wa.Main.MsgConv.ToMatrix(ctx, portal, evt.wa.Client, intent, evt.Message, &evt.Info, evt.isViewOnce(), nil)
+	converted := evt.wa.Main.MsgConv.ToMatrix(
+		ctx, portal, evt.wa.Client, intent, evt.Message, evt.MsgEvent.RawMessage, &evt.Info, evt.isViewOnce(), nil,
+	)
 	if isFailedMedia(converted) {
 		evt.postHandle = func() {
 			evt.wa.processFailedMedia(ctx, portal.PortalKey, evt.GetID(), converted, false)

@@ -28,6 +28,7 @@ import (
 	"github.com/iKonoTelecomunicaciones/go/bridgev2/networkid"
 	"github.com/iKonoTelecomunicaciones/go/bridgev2/status"
 	"github.com/rs/zerolog"
+	"go.mau.fi/util/exsync"
 	"go.mau.fi/whatsmeow"
 	waBinary "go.mau.fi/whatsmeow/binary"
 	"go.mau.fi/whatsmeow/proto/waHistorySync"
@@ -51,6 +52,7 @@ func (wa *WhatsAppConnector) LoadUserLogin(ctx context.Context, login *bridgev2.
 		resyncQueue:        make(map[types.JID]resyncQueueItem),
 		directMediaRetries: make(map[networkid.MessageID]*directMediaRetry),
 		mediaRetryLock:     semaphore.NewWeighted(wa.Config.HistorySync.MediaRequests.MaxAsyncHandle),
+		pushNamesSynced:    exsync.NewEvent(),
 	}
 	login.Client = w
 
@@ -110,8 +112,10 @@ type WhatsAppClient struct {
 	directMediaRetries map[networkid.MessageID]*directMediaRetry
 	directMediaLock    sync.Mutex
 	mediaRetryLock     *semaphore.Weighted
-	offlineSyncWaiter  chan error
+	offlineSyncWaiter  atomic.Pointer[chan error]
 	isNewLogin         bool
+	pushNamesSynced    *exsync.Event
+	lastPresence       types.Presence
 }
 
 var (
@@ -206,8 +210,14 @@ func (wa *WhatsAppClient) Connect(ctx context.Context) {
 }
 
 func (wa *WhatsAppClient) notifyOfflineSyncWaiter(err error) {
-	if wa.offlineSyncWaiter != nil {
-		wa.offlineSyncWaiter <- err
+	if ch := wa.offlineSyncWaiter.Load(); ch != nil {
+		select {
+		case *ch <- err:
+		default:
+			wa.UserLogin.Log.Warn().
+				AnErr("dropped_error", err).
+				Msg("Offline sync waiter channel was full, dropping input")
+		}
 	}
 }
 
@@ -229,7 +239,9 @@ func (wa *WhatsAppClient) ConnectBackground(ctx context.Context, params *bridgev
 		return bridgev2.ErrNotLoggedIn
 	}
 	wa.Client.BackgroundEventCtx = wa.UserLogin.Log.WithContext(wa.Main.Bridge.BackgroundCtx)
-	wa.offlineSyncWaiter = make(chan error)
+	ch := make(chan error, 1)
+	wa.offlineSyncWaiter.Store(&ch)
+	defer wa.offlineSyncWaiter.Store(nil)
 	wa.Main.backgroundConnectOnce.Do(wa.Main.onFirstBackgroundConnect)
 	if err := wa.Main.updateProxy(ctx, wa.Client, false); err != nil {
 		zerolog.Ctx(ctx).Err(err).Msg("Failed to update proxy")
@@ -250,7 +262,7 @@ func (wa *WhatsAppClient) ConnectBackground(ctx context.Context, params *bridgev
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case err = <-wa.offlineSyncWaiter:
+	case err = <-ch:
 		if err == nil {
 			var data wrappedPushNotificationData
 			err = json.Unmarshal(params.RawData, &data)
@@ -387,6 +399,20 @@ func (wa *WhatsAppClient) syncRemoteProfile(ctx context.Context, ghost *bridgev2
 }
 
 func (wa *WhatsAppClient) HandleMatrixViewingChat(ctx context.Context, msg *bridgev2.MatrixViewingChat) error {
+	var presence types.Presence
+	if msg.Portal != nil {
+		presence = types.PresenceAvailable
+	} else {
+		presence = types.PresenceUnavailable
+	}
+
+	if wa.lastPresence != presence {
+		err := wa.updatePresence(presence)
+		if err != nil {
+			zerolog.Ctx(ctx).Warn().Err(err).Msg("Failed to set presence when viewing chat")
+		}
+	}
+
 	if msg.Portal == nil || msg.Portal.Metadata.(*waid.PortalMetadata).LastSync.Add(5*time.Minute).After(time.Now()) {
 		// If we resynced this portal within the last 5 minutes, don't do it again
 		return nil
@@ -414,4 +440,12 @@ func (wa *WhatsAppClient) HandleMatrixViewingChat(ctx context.Context, msg *brid
 	}
 
 	return nil
+}
+
+func (wa *WhatsAppClient) updatePresence(presence types.Presence) error {
+	err := wa.Client.SendPresence(presence)
+	if err == nil {
+		wa.lastPresence = presence
+	}
+	return err
 }

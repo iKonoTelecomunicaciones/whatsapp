@@ -1,8 +1,6 @@
 package main
 
 import (
-	"net/http"
-
 	"github.com/iKonoTelecomunicaciones/go/bridgev2/bridgeconfig"
 	"github.com/iKonoTelecomunicaciones/go/bridgev2/matrix/mxmain"
 
@@ -23,7 +21,7 @@ var m = mxmain.BridgeMain{
 	Name:        "mautrix-whatsapp",
 	URL:         "https://github.com/mautrix/whatsapp",
 	Description: "A Matrix-WhatsApp puppeting bridge.",
-	Version:     "0.12.3",
+	Version:     "0.12.4",
 	Connector:   c,
 }
 
@@ -43,15 +41,15 @@ func main() {
 	}
 	m.PostStart = func() {
 		if m.Matrix.Provisioning != nil {
-			m.Matrix.Provisioning.Router.HandleFunc("/v1/login", legacyProvLogin).Methods(http.MethodGet)
-			m.Matrix.Provisioning.Router.HandleFunc("/v1/logout", legacyProvLogout).Methods(http.MethodPost)
-			m.Matrix.Provisioning.Router.HandleFunc("/v1/contacts", legacyProvContacts).Methods(http.MethodGet)
-			m.Matrix.Provisioning.Router.HandleFunc("/v1/resolve_identifier/{number}", legacyProvResolveIdentifier).Methods(http.MethodGet)
-			m.Matrix.Provisioning.Router.HandleFunc("/v1/pm/{number}", legacyProvResolveIdentifier).Methods(http.MethodPost)
-			m.Matrix.Provisioning.Router.HandleFunc("/v1/ping", legacyProvPing).Methods(http.MethodGet)
-			m.Matrix.Provisioning.Router.HandleFunc("/v1/room_info", legacyProvRoomInfo).Methods(http.MethodGet)
-			m.Matrix.Provisioning.Router.HandleFunc("/v1/set_power_level", legacyProvSetPowerlevels).Methods(http.MethodPost)
-			m.Matrix.Provisioning.Router.HandleFunc("/v1/set_relay", legacyProvSetRelay).Methods(http.MethodPost)
+			m.Matrix.Provisioning.Router.HandleFunc("GET /v1/login", legacyProvLogin)
+			m.Matrix.Provisioning.Router.HandleFunc("POST /v1/logout", legacyProvLogout)
+			m.Matrix.Provisioning.Router.HandleFunc("GET /v1/contacts", legacyProvContacts)
+			m.Matrix.Provisioning.Router.HandleFunc("GET /v1/resolve_identifier/{number}", legacyProvResolveIdentifier)
+			m.Matrix.Provisioning.Router.HandleFunc("POST /v1/pm/{number}", legacyProvResolveIdentifier)
+			m.Matrix.Provisioning.Router.HandleFunc("GET /v1/ping", legacyProvPing)
+			m.Matrix.Provisioning.Router.HandleFunc("GET /v1/room_info", legacyProvRoomInfo)
+			m.Matrix.Provisioning.Router.HandleFunc("POST /v1/set_power_level", legacyProvSetPowerlevels)
+			m.Matrix.Provisioning.Router.HandleFunc("POST /v1/set_relay", legacyProvSetRelay)
 			m.Matrix.Provisioning.GetAuthFromRequest = legacyProvAuth
 		}
 	}

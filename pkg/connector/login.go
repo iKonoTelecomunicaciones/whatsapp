@@ -2,6 +2,7 @@ package connector
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"sync/atomic"
@@ -12,6 +13,7 @@ import (
 	"github.com/iKonoTelecomunicaciones/go/bridgev2/status"
 	"github.com/rs/zerolog"
 	"go.mau.fi/util/exsync"
+	"go.mau.fi/util/jsontime"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
@@ -61,6 +63,16 @@ var (
 		ErrCode:    "FI.MAU.WHATSAPP.LOGIN_UNEXPECTED_EVENT",
 		Err:        "Unexpected event while waiting for login",
 		StatusCode: http.StatusInternalServerError,
+	}
+	ErrPhoneNumberTooShort = bridgev2.RespError{
+		ErrCode:    "FI.MAU.WHATSAPP.PHONE_NUMBER_TOO_SHORT",
+		Err:        "Phone number too short",
+		StatusCode: http.StatusBadRequest,
+	}
+	ErrPhoneNumberIsNotInternational = bridgev2.RespError{
+		ErrCode:    "FI.MAU.WHATSAPP.PHONE_NUMBER_NOT_INTERNATIONAL",
+		Err:        "Phone number must be in international format",
+		StatusCode: http.StatusBadRequest,
 	}
 )
 
@@ -180,6 +192,11 @@ func (wl *WALogin) SubmitUserInput(ctx context.Context, input map[string]string)
 	pairingCode, err := wl.Client.PairPhone(ctx, input["phone_number"], true, whatsmeow.PairClientChrome, "Chrome (Linux)")
 	if err != nil {
 		wl.Log.Err(err).Msg("Failed to request phone code login")
+		if errors.Is(err, whatsmeow.ErrPhoneNumberTooShort) {
+			return nil, ErrPhoneNumberTooShort
+		} else if errors.Is(err, whatsmeow.ErrPhoneNumberIsNotInternational) {
+			return nil, ErrPhoneNumberIsNotInternational
+		}
 		return nil, err
 	}
 	wl.Log.Debug().Msg("Phone code login started")
@@ -321,8 +338,8 @@ func (wl *WALogin) Wait(ctx context.Context) (*bridgev2.LoginStep, error) {
 			Name:  wl.LoginSuccess.BusinessName,
 		},
 		Metadata: &waid.UserLoginMetadata{
-			WALID:      wl.LoginSuccess.LID.User,
 			WADeviceID: wl.LoginSuccess.ID.Device,
+			LoggedInAt: jsontime.UnixNow(),
 			Timezone:   wl.Timezone,
 
 			HistorySyncPortalsNeedCreating: true,
