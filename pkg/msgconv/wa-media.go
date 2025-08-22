@@ -94,7 +94,8 @@ func (mc *MessageConverter) convertMediaMessage(
 		}
 		var err error
 		portal := getPortal(ctx)
-		preparedMedia.URL, err = portal.Bridge.Matrix.GenerateContentURI(ctx, waid.MakeMediaID(messageInfo, portal.Receiver))
+		idOverride := getEditTargetID(ctx)
+		preparedMedia.URL, err = portal.Bridge.Matrix.GenerateContentURI(ctx, waid.MakeMediaID(messageInfo, idOverride, portal.Receiver))
 		if err != nil {
 			panic(fmt.Errorf("failed to generate content URI: %w", err))
 		}
@@ -214,6 +215,28 @@ func (mc *MessageConverter) getMediaTypeData(
 	}
 
 	return preparedMedia
+}
+
+func (mc *MessageConverter) convertAlbumMessage(ctx context.Context, msg *waE2E.AlbumMessage) (*bridgev2.ConvertedMessagePart, *waE2E.ContextInfo) {
+	parts := make([]string, 0, 2)
+	if msg.GetExpectedImageCount() > 0 {
+		parts = append(parts, fmt.Sprintf("%d images", msg.GetExpectedImageCount()))
+	}
+	if msg.GetExpectedVideoCount() > 0 {
+		parts = append(parts, fmt.Sprintf("%d videos", msg.GetExpectedVideoCount()))
+	}
+	var partDesc string
+	if len(parts) > 0 {
+		partDesc = fmt.Sprintf(" with %s", strings.Join(parts, " and "))
+	}
+	body := fmt.Sprintf("Sent an album%s:", partDesc)
+	return &bridgev2.ConvertedMessagePart{
+		Type: event.EventMessage,
+		Content: &event.MessageEventContent{
+			MsgType: event.MsgNotice,
+			Body:    body,
+		},
+	}, msg.GetContextInfo()
 }
 
 const FailedMediaField = "fi.mau.whatsapp.failed_media"

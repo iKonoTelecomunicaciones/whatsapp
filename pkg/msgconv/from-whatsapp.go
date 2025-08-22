@@ -45,6 +45,7 @@ const (
 	contextKeyClient contextKey = iota
 	contextKeyIntent
 	contextKeyPortal
+	ContextKeyEditTargetID
 )
 
 func getClient(ctx context.Context) *whatsmeow.Client {
@@ -57,6 +58,11 @@ func getIntent(ctx context.Context) bridgev2.MatrixAPI {
 
 func getPortal(ctx context.Context) *bridgev2.Portal {
 	return ctx.Value(contextKeyPortal).(*bridgev2.Portal)
+}
+
+func getEditTargetID(ctx context.Context) types.MessageID {
+	editID, _ := ctx.Value(ContextKeyEditTargetID).(types.MessageID)
+	return editID
 }
 
 func (mc *MessageConverter) getBasicUserInfo(ctx context.Context, user types.JID) (id.UserID, string, error) {
@@ -126,6 +132,7 @@ func (mc *MessageConverter) ToMatrix(
 	client *whatsmeow.Client,
 	intent bridgev2.MatrixAPI,
 	waMsg *waE2E.Message,
+	rawWaMsg *waE2E.Message,
 	info *types.MessageInfo,
 	isViewOnce bool,
 	previouslyConvertedPart *bridgev2.ConvertedMessagePart,
@@ -170,6 +177,12 @@ func (mc *MessageConverter) ToMatrix(
 		part, contextInfo = mc.convertPollUpdateMessage(ctx, info, waMsg.PollUpdateMessage)
 	case waMsg.EventMessage != nil:
 		part, contextInfo = mc.convertEventMessage(ctx, waMsg.EventMessage)
+	case waMsg.PinInChatMessage != nil:
+		part, contextInfo = mc.convertPinInChatMessage(ctx, waMsg.PinInChatMessage)
+	case waMsg.KeepInChatMessage != nil:
+		part, contextInfo = mc.convertKeepInChatMessage(ctx, waMsg.KeepInChatMessage)
+	case waMsg.RichResponseMessage != nil:
+		part, contextInfo = mc.convertRichResponseMessage(ctx, waMsg.RichResponseMessage)
 	case waMsg.ImageMessage != nil:
 		part, status_part, contextInfo = mc.convertMediaMessage(ctx, waMsg.ImageMessage, "photo", info, isViewOnce, previouslyConvertedPart)
 	case waMsg.StickerMessage != nil:
@@ -186,6 +199,8 @@ func (mc *MessageConverter) ToMatrix(
 		part, status_part, contextInfo = mc.convertMediaMessage(ctx, waMsg.AudioMessage, typeName, info, isViewOnce, previouslyConvertedPart)
 	case waMsg.DocumentMessage != nil:
 		part, status_part, contextInfo = mc.convertMediaMessage(ctx, waMsg.DocumentMessage, "file attachment", info, isViewOnce, previouslyConvertedPart)
+	case waMsg.AlbumMessage != nil:
+		part, contextInfo = mc.convertAlbumMessage(ctx, waMsg.AlbumMessage)
 	case waMsg.LocationMessage != nil:
 		part, contextInfo = mc.convertLocationMessage(ctx, waMsg.LocationMessage)
 	case waMsg.LiveLocationMessage != nil:
@@ -203,7 +218,7 @@ func (mc *MessageConverter) ToMatrix(
 	case waMsg.EncCommentMessage != nil:
 		part = failedCommentPart
 	default:
-		part, contextInfo = mc.convertUnknownMessage(ctx, waMsg)
+		part, contextInfo = mc.convertUnknownMessage(ctx, rawWaMsg)
 	}
 
 	part.Content.Mentions = &event.Mentions{}

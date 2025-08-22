@@ -12,7 +12,6 @@ import (
 	mautrix "github.com/iKonoTelecomunicaciones/go"
 	"github.com/iKonoTelecomunicaciones/go/event"
 
-	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 	"github.com/iKonoTelecomunicaciones/go/bridgev2"
 	"github.com/iKonoTelecomunicaciones/go/bridgev2/matrix"
@@ -292,7 +291,7 @@ func legacyProvContacts(w http.ResponseWriter, r *http.Request) {
 }
 
 func legacyProvResolveIdentifier(w http.ResponseWriter, r *http.Request) {
-	number := mux.Vars(r)["number"]
+	number := r.PathValue("number")
 	userLogin := m.Matrix.Provisioning.GetLoginForRequest(w, r)
 	if userLogin == nil {
 		return

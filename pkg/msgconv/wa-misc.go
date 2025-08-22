@@ -184,3 +184,52 @@ func (mc *MessageConverter) convertEventMessage(ctx context.Context, msg *waE2E.
 		Content: &content,
 	}, msg.GetContextInfo()
 }
+
+func (mc *MessageConverter) convertPinInChatMessage(ctx context.Context, msg *waE2E.PinInChatMessage) (*bridgev2.ConvertedMessagePart, *waE2E.ContextInfo) {
+	body := "Pinned a message"
+	if msg.GetType() == waE2E.PinInChatMessage_UNPIN_FOR_ALL {
+		body = "Unpinned a message"
+	}
+
+	return &bridgev2.ConvertedMessagePart{
+		Type: event.EventMessage,
+		Content: &event.MessageEventContent{
+			MsgType: event.MsgNotice,
+			Body:    body,
+		},
+	}, nil
+}
+
+func (mc *MessageConverter) convertKeepInChatMessage(ctx context.Context, msg *waE2E.KeepInChatMessage) (*bridgev2.ConvertedMessagePart, *waE2E.ContextInfo) {
+	body := "Kept a message"
+	if msg.GetKeepType() == waE2E.KeepType_UNDO_KEEP_FOR_ALL {
+		body = "Unkept a message"
+	}
+
+	return &bridgev2.ConvertedMessagePart{
+		Type: event.EventMessage,
+		Content: &event.MessageEventContent{
+			MsgType: event.MsgNotice,
+			Body:    body,
+		},
+	}, nil
+}
+
+func (mc *MessageConverter) convertRichResponseMessage(ctx context.Context, msg *waE2E.AIRichResponseMessage) (*bridgev2.ConvertedMessagePart, *waE2E.ContextInfo) {
+	var body strings.Builder
+
+	for i, submsg := range msg.GetSubmessages() {
+		if submsg.GetMessageType() == waE2E.AIRichResponseMessage_AI_RICH_RESPONSE_TEXT {
+			if i > 0 {
+				body.WriteString("\n")
+			}
+			body.WriteString(submsg.GetMessageText())
+		}
+	}
+
+	content := format.RenderMarkdown(body.String(), true, false)
+	return &bridgev2.ConvertedMessagePart{
+		Type:    event.EventMessage,
+		Content: &content,
+	}, msg.GetContextInfo()
+}
