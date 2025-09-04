@@ -58,20 +58,26 @@ func (mc *MessageConverter) convertExtendedMessage(
 	contextInfo *waE2E.ContextInfo,
 ) {
 
-	messageContextInfo := msg.GetExtendedTextMessage().ContextInfo
+	extMsg := msg.GetExtendedTextMessage()
+	if extMsg == nil {
+		// No extended text message, return nils
+		return
+	}
+
+	messageContextInfo := extMsg.ContextInfo
 
 	part = &bridgev2.ConvertedMessagePart{
 		Type: event.EventMessage,
 		Content: &event.MessageEventContent{
 			MsgType: event.MsgText,
-			Body:    msg.ExtendedTextMessage.GetText(),
+			Body:    extMsg.GetText(),
 		},
 	}
 	mc.parseFormatting(part.Content, false, false)
-	part.Content.BeeperLinkPreviews = mc.convertURLPreviewToBeeper(ctx, msg.ExtendedTextMessage)
-	contextInfo = msg.ExtendedTextMessage.GetContextInfo()
+	part.Content.BeeperLinkPreviews = mc.convertURLPreviewToBeeper(ctx, extMsg)
+	contextInfo = extMsg.GetContextInfo()
 
-	if messageContextInfo.RemoteJID == nil && messageContextInfo.DisappearingMode == nil && messageContextInfo.GetExternalAdReply() == nil {
+	if messageContextInfo == nil || (messageContextInfo.RemoteJID == nil && messageContextInfo.DisappearingMode == nil && messageContextInfo.GetExternalAdReply() == nil) {
 		return
 	}
 
@@ -95,13 +101,13 @@ func (mc *MessageConverter) convertExtendedMessage(
 
 	quotedMessage := messageContextInfo.GetQuotedMessage()
 
-	if quotedMessage.GetExtendedTextMessage() != nil {
+	if quotedMessage != nil && quotedMessage.GetExtendedTextMessage() != nil {
 		part.Content.MsgType = event.MsgNotice
 		status_part = mc.convertExtendedStatusMessage(ctx, info, quotedMessage)
 		return
 	}
 
-	if quotedMessage.GetVideoMessage() == nil && quotedMessage.GetImageMessage() == nil && quotedMessage.GetAudioMessage() == nil {
+	if quotedMessage == nil || (quotedMessage.GetVideoMessage() == nil && quotedMessage.GetImageMessage() == nil && quotedMessage.GetAudioMessage() == nil) {
 		return
 	}
 
