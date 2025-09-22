@@ -6,7 +6,7 @@ toolchain go1.25.0
 
 require (
 	github.com/gorilla/websocket v1.5.0
-	github.com/iKonoTelecomunicaciones/go v0.24.3
+	github.com/iKonoTelecomunicaciones/go v0.24.3-relay
 	github.com/lib/pq v1.10.9
 	github.com/rs/zerolog v1.34.0
 	go.mau.fi/util v0.9.0
