@@ -609,3 +609,57 @@ func legacyProvSetRelay(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	exhttp.WriteJSONResponse(w, http.StatusOK, resp)
 }
+
+func legacyProvValidateSetRelay(w http.ResponseWriter, r *http.Request) {
+	roomID := r.PathValue("roomID")
+
+	log := hlog.FromRequest(r)
+	userLogin := m.Matrix.Provisioning.GetLoginForRequest(w, r)
+	if userLogin == nil {
+		return
+	}
+
+	// Get the portal by room ID
+	portal, err := m.Bridge.GetPortalByMXID(r.Context(), id.RoomID(roomID))
+
+	if err != nil {
+		exhttp.WriteJSONResponse(w, http.StatusInternalServerError, Error{
+			Error:   "Error while fetching portal",
+			ErrCode: "failed to get portal",
+		})
+		return
+	}
+	if portal == nil {
+		exhttp.WriteJSONResponse(w, http.StatusNotFound, Error{
+			Error:   "Portal not found",
+			ErrCode: "portal not found",
+		})
+		return
+	}
+
+	log.Debug().Str(
+		"room_id", roomID,
+	).Msgf("Validating set relay for room and user login %s", userLogin.ID)
+
+	var resp Response
+	var statusCode int
+	hasPortalRelay := portal.Relay
+
+	if hasPortalRelay != nil && portal.Relay.User.MXID == userLogin.User.MXID {
+		resp = Response{
+			Success: true,
+			Status:  "The room already has a relay set for this user",
+		}
+		statusCode = http.StatusOK
+	} else {
+		resp = Response{
+			Success: false,
+			Status:  "The room does not have a relay set for this user",
+		}
+
+		statusCode = http.StatusBadRequest
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	exhttp.WriteJSONResponse(w, statusCode, resp)
+}

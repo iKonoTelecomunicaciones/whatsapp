@@ -50,6 +50,7 @@ func main() {
 			m.Matrix.Provisioning.Router.HandleFunc("GET /v1/room_info", legacyProvRoomInfo)
 			m.Matrix.Provisioning.Router.HandleFunc("POST /v1/set_power_level", legacyProvSetPowerlevels)
 			m.Matrix.Provisioning.Router.HandleFunc("POST /v1/set_relay", legacyProvSetRelay)
+			m.Matrix.Provisioning.Router.HandleFunc("GET /v1/set_relay/{roomID}", legacyProvValidateSetRelay)
 			m.Matrix.Provisioning.GetAuthFromRequest = legacyProvAuth
 		}
 	}
