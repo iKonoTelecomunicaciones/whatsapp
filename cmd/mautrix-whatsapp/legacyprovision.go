@@ -637,9 +637,9 @@ func legacyProvValidateSetRelay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Debug().Str(
-		"room_id", roomID,
-	).Msgf("Validating set relay for room and user login %s", userLogin.ID)
+	log.Debug().Str("user_login", string(userLogin.User.MXID)).Str("room_id", roomID).Msg(
+		"Validating set relay for room and user login",
+	)
 
 	var resp Response
 	var statusCode int
