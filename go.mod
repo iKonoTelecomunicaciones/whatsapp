@@ -5,7 +5,6 @@ go 1.24.0
 toolchain go1.25.1
 
 require (
-	github.com/gorilla/websocket v1.5.0
 	github.com/iKonoTelecomunicaciones/go v0.25.1
 	github.com/lib/pq v1.10.9
 	github.com/rs/zerolog v1.34.0
@@ -26,6 +25,7 @@ require (
 	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
 	github.com/elliotchance/orderedmap/v3 v3.1.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect

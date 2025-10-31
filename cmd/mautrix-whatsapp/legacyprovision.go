@@ -8,7 +8,6 @@ import (
 
 	"github.com/iKonoTelecomunicaciones/go/event"
 
-	"github.com/gorilla/websocket"
 	"github.com/iKonoTelecomunicaciones/go/bridgev2"
 	"github.com/iKonoTelecomunicaciones/go/bridgev2/matrix"
 	"github.com/iKonoTelecomunicaciones/go/id"
@@ -20,12 +19,12 @@ import (
 	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/waid"
 )
 
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
-	Subprotocols: []string{"net.maunium.whatsapp.login"},
-}
+//var upgrader = websocket.Upgrader{
+//	CheckOrigin: func(r *http.Request) bool {
+//		return true
+//	},
+//	Subprotocols: []string{"net.maunium.whatsapp.login"},
+//}
 
 func legacyProvAuth(r *http.Request) string {
 	if !strings.HasSuffix(r.URL.Path, "/v1/login") {
