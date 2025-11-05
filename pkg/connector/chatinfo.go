@@ -75,7 +75,7 @@ func (wa *WhatsAppClient) addExtrasToWrapped(ctx context.Context, portalJID type
 
 func updatePortalLastSyncAt(_ context.Context, portal *bridgev2.Portal) bool {
 	meta := portal.Metadata.(*waid.PortalMetadata)
-	forceSave := time.Since(meta.LastSync.Time) > 24*time.Hour
+	forceSave := ResyncMinInterval < 24*time.Hour || time.Since(meta.LastSync.Time) > 24*time.Hour
 	meta.LastSync = jsontime.UnixNow()
 	return forceSave
 }
@@ -275,6 +275,7 @@ func (wa *WhatsAppClient) wrapGroupInfo(ctx context.Context, info *types.GroupIn
 				},
 			},
 		},
+		ExcludeChangesFromTimeline: true,
 		Disappear: &database.DisappearingSetting{
 			Type:  event.DisappearingTypeAfterSend,
 			Timer: time.Duration(info.DisappearingTimer) * time.Second,
@@ -460,7 +461,7 @@ func (wa *WhatsAppClient) makePortalAvatarFetcher(avatarID string, sender types.
 			return false
 		}
 		//lint:ignore SA1019 TODO invent a cleaner way to fetch avatar metadata before updating?
-		return portal.Internal().UpdateAvatar(ctx, wrappedAvatar, senderIntent, ts)
+		return portal.Internal().UpdateAvatar(ctx, wrappedAvatar, senderIntent, ts, false)
 	}
 }
 

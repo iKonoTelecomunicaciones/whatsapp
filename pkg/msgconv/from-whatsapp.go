@@ -136,6 +136,7 @@ func (mc *MessageConverter) ToMatrix(
 	rawWaMsg *waE2E.Message,
 	info *types.MessageInfo,
 	isViewOnce bool,
+	isBackfill bool,
 	previouslyConvertedPart *bridgev2.ConvertedMessagePart,
 ) *bridgev2.ConvertedMessage {
 	ctx = context.WithValue(ctx, contextKeyClient, client)

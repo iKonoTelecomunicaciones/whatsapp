@@ -258,7 +258,7 @@ func (wl *WALogin) handleEvent(rawEvt any) {
 	case *events.PairSuccess:
 		wl.Log.Info().Any("event_data", evt).Msg("Got pair successful event")
 		wl.LoginSuccess = evt
-		wl.Main.Bridge.UpdateSetRelayFromUser(wl.Log.Debug().GetCtx(), evt.ID.User)
+		wl.Main.Bridge.DB.Portal.UpdateSetRelayFromUser(wl.Log.Debug().GetCtx(), evt.ID.User)
 	case *events.PairError:
 		wl.Log.Error().Any("event_data", evt).Msg("Got pair error event")
 		wl.LoginError = bridgev2.RespError{
