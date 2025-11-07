@@ -188,7 +188,7 @@ func (evt *WAMessageEvent) ConvertEdit(ctx context.Context, portal *bridgev2.Por
 
 	ctx = context.WithValue(ctx, msgconv.ContextKeyEditTargetID, evt.Message.GetProtocolMessage().GetKey().GetID())
 	cm := evt.wa.Main.MsgConv.ToMatrix(
-		ctx, portal, evt.wa.Client, intent, editedMsg, evt.MsgEvent.RawMessage, &evt.Info, evt.isViewOnce(), previouslyConvertedPart,
+		ctx, portal, evt.wa.Client, intent, editedMsg, evt.MsgEvent.RawMessage, &evt.Info, evt.isViewOnce(), false, previouslyConvertedPart,
 	)
 	if evt.isUndecryptableUpsertSubEvent && isFailedMedia(cm) {
 		evt.postHandle = func() {
@@ -263,9 +263,9 @@ func (evt *WAMessageEvent) HandleExisting(ctx context.Context, portal *bridgev2.
 }
 
 func (evt *WAMessageEvent) ConvertMessage(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI) (*bridgev2.ConvertedMessage, error) {
-	evt.wa.EnqueuePortalResync(portal)
+	evt.wa.EnqueuePortalResync(portal, false)
 	converted := evt.wa.Main.MsgConv.ToMatrix(
-		ctx, portal, evt.wa.Client, intent, evt.Message, evt.MsgEvent.RawMessage, &evt.Info, evt.isViewOnce(), nil,
+		ctx, portal, evt.wa.Client, intent, evt.Message, evt.MsgEvent.RawMessage, &evt.Info, evt.isViewOnce(), false, nil,
 	)
 	if isFailedMedia(converted) {
 		evt.postHandle = func() {
@@ -340,9 +340,13 @@ func (evt *WAUndecryptableMessage) ConvertMessage(ctx context.Context, portal *b
 	}
 	content := &undecryptableMessageContent
 	if evt.Type == events.UnavailableTypeViewOnce {
+		body := "You received a view once message. For added privacy, you can only open it on the WhatsApp app."
+		if evt.Info.IsFromMe {
+			body = "You sent a view once message from another device."
+		}
 		content = &event.MessageEventContent{
 			MsgType: event.MsgNotice,
-			Body:    "You received a view once message. For added privacy, you can only open it on the WhatsApp app.",
+			Body:    body,
 		}
 	}
 	// TODO thread root for comments
