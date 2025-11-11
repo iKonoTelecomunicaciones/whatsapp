@@ -45,6 +45,7 @@ var (
 	_ bridgev2.MuteHandlingNetworkAPI           = (*WhatsAppClient)(nil)
 	_ bridgev2.TagHandlingNetworkAPI            = (*WhatsAppClient)(nil)
 	_ bridgev2.MarkedUnreadHandlingNetworkAPI   = (*WhatsAppClient)(nil)
+	_ bridgev2.DeleteChatHandlingNetworkAPI     = (*WhatsAppClient)(nil)
 )
 
 func (wa *WhatsAppClient) HandleMatrixPollStart(ctx context.Context, msg *bridgev2.MatrixPollStart) (*bridgev2.MatrixMessageResponse, error) {
@@ -321,7 +322,7 @@ func (wa *WhatsAppClient) HandleMatrixReadReceipt(ctx context.Context, receipt *
 		messagesToRead[key] = append(messagesToRead[key], parsed.ID)
 	}
 	for messageSender, ids := range messagesToRead {
-		err = wa.Client.MarkRead(ids, receipt.Receipt.Timestamp, portalJID, messageSender)
+		err = wa.Client.MarkRead(ctx, ids, receipt.Receipt.Timestamp, portalJID, messageSender)
 		if err != nil {
 			log.Err(err).Strs("ids", ids).Msg("Failed to mark messages as read")
 		}
@@ -351,12 +352,12 @@ func (wa *WhatsAppClient) HandleMatrixTyping(ctx context.Context, msg *bridgev2.
 	}
 
 	if wa.Main.Config.SendPresenceOnTyping {
-		err = wa.updatePresence(types.PresenceAvailable)
+		err = wa.updatePresence(ctx, types.PresenceAvailable)
 		if err != nil {
 			zerolog.Ctx(ctx).Warn().Err(err).Msg("Failed to set presence on typing")
 		}
 	}
-	return wa.Client.SendChatPresence(portalJID, chatPresence, mediaPresence)
+	return wa.Client.SendChatPresence(ctx, portalJID, chatPresence, mediaPresence)
 }
 
 var errUnsupportedDisappearingTimer = bridgev2.WrapErrorInStatus(errors.New("invalid value for disappearing timer")).WithErrorAsMessage().WithIsCertain(true).WithSendNotice(true)
@@ -374,7 +375,7 @@ func (wa *WhatsAppClient) HandleMatrixDisappearingTimer(ctx context.Context, msg
 	}
 
 	settingTS := time.UnixMilli(msg.Event.Timestamp)
-	err = wa.Client.SetDisappearingTimer(portalJID, msg.Content.Timer.Duration, settingTS)
+	err = wa.Client.SetDisappearingTimer(ctx, portalJID, msg.Content.Timer.Duration, settingTS)
 	if err != nil {
 		return false, err
 	}
@@ -429,7 +430,7 @@ func (wa *WhatsAppClient) HandleMatrixMembership(ctx context.Context, msg *bridg
 		return false, fmt.Errorf("cannot get target intent: unknown type: %T", target)
 	}
 
-	_, err = wa.Client.UpdateGroupParticipants(portalJID, changes, action)
+	_, err = wa.Client.UpdateGroupParticipants(ctx, portalJID, changes, action)
 	if err != nil {
 		return false, err
 	}
@@ -447,7 +448,7 @@ func (wa *WhatsAppClient) HandleMatrixRoomName(ctx context.Context, msg *bridgev
 		return false, fmt.Errorf("cannot set room name for DM")
 	}
 
-	err = wa.Client.SetGroupName(portalJID, msg.Content.Name)
+	err = wa.Client.SetGroupName(ctx, portalJID, msg.Content.Name)
 	if err != nil {
 		return false, err
 	}
@@ -470,7 +471,7 @@ func (wa *WhatsAppClient) HandleMatrixRoomTopic(ctx context.Context, msg *bridge
 
 	newID := wa.Client.GenerateMessageID()
 	oldID := msg.Portal.Metadata.(*waid.PortalMetadata).TopicID
-	err = wa.Client.SetGroupTopic(portalJID, oldID, newID, msg.Content.Topic)
+	err = wa.Client.SetGroupTopic(ctx, portalJID, oldID, newID, msg.Content.Topic)
 	if err != nil {
 		return false, err
 	}
@@ -505,7 +506,7 @@ func (wa *WhatsAppClient) HandleMatrixRoomAvatar(ctx context.Context, msg *bridg
 		}
 	}
 
-	avatarID, err := wa.Client.SetGroupPhoto(portalJID, data)
+	avatarID, err := wa.Client.SetGroupPhoto(ctx, portalJID, data)
 	if err != nil {
 		return false, err
 	}
@@ -595,14 +596,10 @@ func (wa *WhatsAppClient) HandleRoomTag(ctx context.Context, msg *bridgev2.Matri
 	return wa.Client.SendAppState(ctx, appstate.BuildPin(chatJID, isFavorite))
 }
 
-func (wa *WhatsAppClient) HandleMarkedUnread(ctx context.Context, msg *bridgev2.MatrixMarkedUnread) error {
-	chatJID, err := waid.ParsePortalID(msg.Portal.ID)
+func (wa *WhatsAppClient) getLastMessageInfo(ctx context.Context, chatJID types.JID, portalKey networkid.PortalKey) (time.Time, *waCommon.MessageKey, error) {
+	msgs, err := wa.Main.Bridge.DB.Message.GetLastNInPortal(ctx, portalKey, 1)
 	if err != nil {
-		return err
-	}
-	msgs, err := wa.Main.Bridge.DB.Message.GetLastNInPortal(ctx, msg.Portal.PortalKey, 1)
-	if err != nil {
-		return fmt.Errorf("failed to get last message in portal: %w", err)
+		return time.Time{}, nil, fmt.Errorf("failed to get last message in portal: %w", err)
 	}
 	var lastTS time.Time
 	var lastKey *waCommon.MessageKey
@@ -623,5 +620,32 @@ func (wa *WhatsAppClient) HandleMarkedUnread(ctx context.Context, msg *bridgev2.
 			}
 		}
 	}
+	return lastTS, lastKey, nil
+}
+
+func (wa *WhatsAppClient) HandleMarkedUnread(ctx context.Context, msg *bridgev2.MatrixMarkedUnread) error {
+	chatJID, err := waid.ParsePortalID(msg.Portal.ID)
+	if err != nil {
+		return err
+	}
+	lastTS, lastKey, err := wa.getLastMessageInfo(ctx, chatJID, msg.Portal.PortalKey)
+	if err != nil {
+		return err
+	}
 	return wa.Client.SendAppState(ctx, appstate.BuildMarkChatAsRead(chatJID, msg.Content.Unread, lastTS, lastKey))
+}
+
+func (wa *WhatsAppClient) HandleMatrixDeleteChat(ctx context.Context, msg *bridgev2.MatrixDeleteChat) error {
+	chatJID, err := waid.ParsePortalID(msg.Portal.ID)
+	if err != nil {
+		return err
+	}
+	lastTS, lastKey, err := wa.getLastMessageInfo(ctx, chatJID, msg.Portal.PortalKey)
+	if err != nil {
+		return err
+	}
+	if lastKey == nil {
+		return fmt.Errorf("failed to delete chat: no messages found")
+	}
+	return wa.Client.SendAppState(ctx, appstate.BuildDeleteChat(chatJID, lastTS, lastKey))
 }

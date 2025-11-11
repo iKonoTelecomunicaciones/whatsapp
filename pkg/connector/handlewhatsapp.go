@@ -129,7 +129,7 @@ func (wa *WhatsAppClient) handleWAEvent(rawEvt any) (success bool) {
 
 	case *events.AppStateSyncComplete:
 		if len(wa.GetStore().PushName) > 0 && evt.Name == appstate.WAPatchCriticalBlock {
-			err := wa.updatePresence(types.PresenceUnavailable)
+			err := wa.updatePresence(ctx, types.PresenceUnavailable)
 			if err != nil {
 				log.Warn().Err(err).Msg("Failed to send presence after app state sync")
 			}
@@ -142,11 +142,15 @@ func (wa *WhatsAppClient) handleWAEvent(rawEvt any) (success bool) {
 	case *events.PushNameSetting:
 		// Send presence available when connecting and when the pushname is changed.
 		// This makes sure that outgoing messages always have the right pushname.
-		err := wa.updatePresence(types.PresenceUnavailable)
+		err := wa.updatePresence(ctx, types.PresenceUnavailable)
 		if err != nil {
 			log.Warn().Err(err).Msg("Failed to send presence after push name update")
 		}
 		_, _, err = wa.GetStore().Contacts.PutPushName(ctx, wa.JID.ToNonAD(), evt.Action.GetName())
+		if err != nil {
+			log.Err(err).Msg("Failed to update push name in store")
+		}
+		_, _, err = wa.GetStore().Contacts.PutPushName(ctx, wa.GetStore().GetLID().ToNonAD(), evt.Action.GetName())
 		if err != nil {
 			log.Err(err).Msg("Failed to update push name in store")
 		}
@@ -163,12 +167,12 @@ func (wa *WhatsAppClient) handleWAEvent(rawEvt any) (success bool) {
 		wa.UserLogin.BridgeState.Send(status.BridgeState{StateEvent: status.StateConnected})
 		if len(wa.GetStore().PushName) > 0 {
 			go func() {
-				err := wa.updatePresence(types.PresenceUnavailable)
+				err := wa.updatePresence(ctx, types.PresenceUnavailable)
 				if err != nil {
 					log.Warn().Err(err).Msg("Failed to send initial presence after connecting")
 				}
 			}()
-			go wa.syncRemoteProfile(log.WithContext(context.Background()), nil)
+			go wa.syncRemoteProfile(ctx, nil)
 		}
 	case *events.OfflineSyncPreview:
 		log.Info().
@@ -264,7 +268,7 @@ func (wa *WhatsAppClient) rerouteWAMessage(ctx context.Context, info *types.Mess
 			Msg("Forced LID DM sender to phone number in own message sent from another device")
 		info.Chat = info.RecipientAlt.ToNonAD()
 	} else if info.Sender.Server == types.BotServer && info.Chat.Server == types.HiddenUserServer {
-		chatPN, err := wa.Device.LIDs.GetPNForLID(ctx, info.Chat)
+		chatPN, err := wa.GetStore().LIDs.GetPNForLID(ctx, info.Chat)
 		if err != nil {
 			wa.UserLogin.Log.Err(err).
 				Str("message_id", info.ID).
@@ -316,6 +320,13 @@ func (wa *WhatsAppClient) handleWAMessage(ctx context.Context, evt *events.Messa
 		evt.Message = &waE2E.Message{
 			ProtocolMessage: protocolMsg,
 		}
+	} else if assocType == waE2E.MessageAssociation_MOTION_PHOTO {
+		//evt.Message = evt.Message.GetAssociatedChildMessage().GetMessage()
+		wa.UserLogin.Log.Debug().
+			Str("message_id", evt.Info.ID).
+			Str("parent_id", messageAssoc.GetParentMessageKey().GetID()).
+			Msg("Ignoring motion photo update")
+		return
 	}
 
 	parsedMessageType := getMessageType(evt.Message)
@@ -388,6 +399,9 @@ func (wa *WhatsAppClient) handleWAUndecryptableMessage(ctx context.Context, evt 
 }
 
 func (wa *WhatsAppClient) handleWAReceipt(ctx context.Context, evt *events.Receipt) (success bool) {
+	if evt.Chat.Server == types.HiddenUserServer && evt.SenderAlt.IsEmpty() {
+		evt.SenderAlt, _ = wa.GetStore().LIDs.GetPNForLID(ctx, evt.Sender)
+	}
 	if evt.Chat.Server == types.HiddenUserServer && evt.Sender.ToNonAD() == evt.Chat && evt.SenderAlt.Server == types.DefaultUserServer {
 		wa.UserLogin.Log.Debug().
 			Stringer("lid", evt.Sender).
@@ -423,7 +437,7 @@ func (wa *WhatsAppClient) handleWAReceipt(ctx context.Context, evt *events.Recei
 	if !evt.MessageSender.IsEmpty() {
 		messageSender = evt.MessageSender
 	} else if evt.Chat.Server == types.GroupServer && evt.Sender.Server == types.HiddenUserServer {
-		lid := wa.Device.GetLID()
+		lid := wa.GetStore().GetLID()
 		if !lid.IsEmpty() {
 			messageSender = lid
 		}
@@ -444,6 +458,15 @@ func (wa *WhatsAppClient) handleWAReceipt(ctx context.Context, evt *events.Recei
 }
 
 func (wa *WhatsAppClient) handleWAChatPresence(ctx context.Context, evt *events.ChatPresence) {
+	if evt.Chat.Server == types.HiddenUserServer && evt.Sender.ToNonAD() == evt.Chat {
+		if evt.SenderAlt.IsEmpty() {
+			evt.SenderAlt, _ = wa.GetStore().LIDs.GetPNForLID(ctx, evt.Sender)
+		}
+		if evt.SenderAlt.Server == types.DefaultUserServer {
+			evt.Sender, evt.SenderAlt = evt.SenderAlt, evt.Sender
+			evt.Chat = evt.Sender.ToNonAD()
+		}
+	}
 	typingType := bridgev2.TypingTypeText
 	timeout := 15 * time.Second
 	if evt.Media == types.ChatPresenceMediaAudio {
@@ -579,6 +602,7 @@ func (wa *WhatsAppClient) handleWADeleteChat(evt *events.DeleteChat) bool {
 			Timestamp: evt.Timestamp,
 		},
 		OnlyForMe: true,
+		Children:  true,
 	}).Success
 }
 
@@ -744,7 +768,7 @@ func (wa *WhatsAppClient) handleWAMute(evt *events.Mute) bool {
 	var mutedUntil time.Time
 	if evt.Action.GetMuted() {
 		mutedUntil = event.MutedForever
-		if evt.Action.GetMuteEndTimestamp() != 0 {
+		if evt.Action.GetMuteEndTimestamp() > 0 {
 			mutedUntil = time.Unix(evt.Action.GetMuteEndTimestamp(), 0)
 		}
 	} else {
