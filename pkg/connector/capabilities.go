@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/iKonoTelecomunicaciones/go/bridgev2"
+	"github.com/iKonoTelecomunicaciones/go/bridgev2/database"
 	"github.com/iKonoTelecomunicaciones/go/event"
 	"go.mau.fi/util/ffmpeg"
 	"go.mau.fi/util/jsontime"
@@ -50,7 +51,7 @@ func (wa *WhatsAppConnector) GetCapabilities() *bridgev2.NetworkGeneralCapabilit
 }
 
 func (wa *WhatsAppConnector) GetBridgeInfoVersion() (info, caps int) {
-	return 1, 4
+	return 1, 6
 }
 
 const WAMaxFileSize = 2000 * 1024 * 1024
@@ -65,7 +66,7 @@ func supportedIfFFmpeg() event.CapabilitySupportLevel {
 }
 
 func capID() string {
-	base := "fi.mau.whatsapp.capabilities.2025_08_25+1"
+	base := "fi.mau.whatsapp.capabilities.2025_10_27"
 	if ffmpeg.Supported() {
 		return base + "+ffmpeg"
 	}
@@ -161,6 +162,17 @@ var whatsappCaps = &event.RoomFeatures{
 			MaxSize:          WAMaxFileSize,
 		},
 	},
+	State: event.StateFeatureMap{
+		event.StateRoomName.Type:                {Level: event.CapLevelFullySupported},
+		event.StateRoomAvatar.Type:              {Level: event.CapLevelFullySupported},
+		event.StateTopic.Type:                   {Level: event.CapLevelFullySupported},
+		event.StateBeeperDisappearingTimer.Type: {Level: event.CapLevelFullySupported},
+	},
+	MemberActions: event.MemberFeatureMap{
+		event.MemberActionInvite: event.CapLevelFullySupported,
+		event.MemberActionKick:   event.CapLevelFullySupported,
+		event.MemberActionLeave:  event.CapLevelFullySupported,
+	},
 	MaxTextLength:       MaxTextLength,
 	LocationMessage:     event.CapLevelFullySupported,
 	Poll:                event.CapLevelFullySupported,
@@ -176,11 +188,19 @@ var whatsappCaps = &event.RoomFeatures{
 	ReadReceipts:        true,
 	TypingNotifications: true,
 	DisappearingTimer:   waDisappearingCap,
+	DeleteChat:          true,
 }
 
+var whatsappDMCaps *event.RoomFeatures
 var whatsappCAGCaps *event.RoomFeatures
 
 func init() {
+	whatsappDMCaps = ptr.Clone(whatsappCaps)
+	whatsappDMCaps.ID = capID() + "+dm"
+	whatsappDMCaps.State = event.StateFeatureMap{
+		event.StateBeeperDisappearingTimer.Type: {Level: event.CapLevelFullySupported},
+	}
+	whatsappDMCaps.MemberActions = nil
 	whatsappCAGCaps = ptr.Clone(whatsappCaps)
 	whatsappCAGCaps.ID = capID() + "+cag"
 	whatsappCAGCaps.Reply = event.CapLevelUnsupported
@@ -190,6 +210,8 @@ func init() {
 func (wa *WhatsAppClient) GetCapabilities(ctx context.Context, portal *bridgev2.Portal) *event.RoomFeatures {
 	if portal.Metadata.(*waid.PortalMetadata).CommunityAnnouncementGroup {
 		return whatsappCAGCaps
+	} else if portal.RoomType == database.RoomTypeDM {
+		return whatsappDMCaps
 	}
 	return whatsappCaps
 }

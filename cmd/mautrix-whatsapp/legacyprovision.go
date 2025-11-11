@@ -95,7 +95,7 @@ func legacyProvContacts(w http.ResponseWriter, r *http.Request) {
 	if userLogin == nil {
 		return
 	}
-	if contacts, err := userLogin.Client.(*connector.WhatsAppClient).Device.Contacts.GetAllContacts(r.Context()); err != nil {
+	if contacts, err := userLogin.Client.(*connector.WhatsAppClient).GetStore().Contacts.GetAllContacts(r.Context()); err != nil {
 		hlog.FromRequest(r).Err(err).Msg("Failed to fetch all contacts")
 		exhttp.WriteJSONResponse(w, http.StatusInternalServerError, Error{
 			Error:   "Internal server error while fetching contact list",
@@ -264,7 +264,7 @@ func legacyProvRoomInfo(w http.ResponseWriter, r *http.Request) {
 		"name":       chatInfo.Name,
 		"topic":      *chatInfo.Topic,
 		"avatar":     chatInfo.Avatar,
-		"members":    *chatInfo.Members,
+		"members":    &chatInfo.Members.MemberMap,
 		"join_rule":  chatInfo.JoinRule,
 		"type":       *chatInfo.Type,
 		"disappear":  chatInfo.Disappear,
