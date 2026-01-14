@@ -21,14 +21,14 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/iKonoTelecomunicaciones/go/bridgev2"
+	"github.com/iKonoTelecomunicaciones/go/bridgev2/networkid"
 	"github.com/rs/zerolog"
 	"go.mau.fi/whatsmeow/types"
-	"maunium.net/go/mautrix/bridgev2"
-	"maunium.net/go/mautrix/bridgev2/networkid"
 
-	"go.mau.fi/mautrix-whatsapp/pkg/connector/wadb"
-	"go.mau.fi/mautrix-whatsapp/pkg/msgconv"
-	"go.mau.fi/mautrix-whatsapp/pkg/waid"
+	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/connector/wadb"
+	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/msgconv"
+	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/waid"
 )
 
 func isFailedMedia(converted *bridgev2.ConvertedMessage) bool {

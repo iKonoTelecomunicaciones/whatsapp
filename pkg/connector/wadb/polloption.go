@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/iKonoTelecomunicaciones/go/bridgev2/networkid"
+	"github.com/iKonoTelecomunicaciones/go/id"
 	"github.com/lib/pq"
 	"go.mau.fi/util/dbutil"
-	"maunium.net/go/mautrix/bridgev2/networkid"
-	"maunium.net/go/mautrix/id"
 )
 
 type PollOptionQuery struct {

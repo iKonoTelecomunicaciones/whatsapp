@@ -24,6 +24,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/iKonoTelecomunicaciones/go/bridgev2"
+	"github.com/iKonoTelecomunicaciones/go/event"
+	"github.com/iKonoTelecomunicaciones/go/format"
 	"github.com/rs/zerolog"
 	"go.mau.fi/util/exerrors"
 	"go.mau.fi/util/ptr"
@@ -31,12 +34,8 @@ import (
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	"google.golang.org/protobuf/proto"
-	"maunium.net/go/mautrix/bridgev2"
-	"maunium.net/go/mautrix/bridgev2/database"
-	"maunium.net/go/mautrix/event"
-	"maunium.net/go/mautrix/format"
 
-	"go.mau.fi/mautrix-whatsapp/pkg/waid"
+	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/waid"
 )
 
 func (mc *MessageConverter) convertUnknownMessage(ctx context.Context, msg *waE2E.Message) (*bridgev2.ConvertedMessagePart, *waE2E.ContextInfo) {
@@ -117,47 +116,44 @@ func (mc *MessageConverter) convertGroupInviteMessage(ctx context.Context, info 
 	}, msg.GetContextInfo()
 }
 
-func (mc *MessageConverter) convertEphemeralSettingMessage(ctx context.Context, msg *waE2E.ProtocolMessage, ts time.Time, isBackfill bool) (*bridgev2.ConvertedMessagePart, *waE2E.ContextInfo) {
-	portal := getPortal(ctx)
-	portalMeta := portal.Metadata.(*waid.PortalMetadata)
-	disappear := database.DisappearingSetting{
-		Type:  event.DisappearingTypeAfterSend,
-		Timer: time.Duration(msg.GetEphemeralExpiration()) * time.Second,
-	}
-	if disappear.Timer == 0 {
-		disappear.Type = ""
-	}
-	dontBridge := portal.Disappear == disappear
-	content := bridgev2.DisappearingMessageNotice(disappear.Timer, false)
-	if !isBackfill {
-		if msg.EphemeralSettingTimestamp == nil || portalMeta.DisappearingTimerSetAt < msg.GetEphemeralSettingTimestamp() {
-			portalMeta.DisappearingTimerSetAt = msg.GetEphemeralSettingTimestamp()
-			portal.UpdateDisappearingSetting(ctx, disappear, bridgev2.UpdateDisappearingSettingOpts{
-				Sender:     getIntent(ctx),
-				Timestamp:  ts,
-				Implicit:   false,
-				Save:       true,
-				SendNotice: false,
-			})
-		} else {
-			content.Body += ", but the change was ignored."
-		}
-	}
-	return &bridgev2.ConvertedMessagePart{
-		Type:    event.EventMessage,
-		Content: content,
-		Extra: map[string]any{
-			"com.beeper.action_message": map[string]any{
-				"type":       "disappearing_timer",
-				"timer":      disappear.Timer.Milliseconds(),
-				"timer_type": disappear.Type,
-				"implicit":   false,
-				"backfill":   isBackfill,
-			},
-		},
-		DontBridge: dontBridge,
-	}, nil
-}
+//func (mc *MessageConverter) convertEphemeralSettingMessage(ctx context.Context, msg *waE2E.ProtocolMessage, ts time.Time) (*bridgev2.ConvertedMessagePart, *waE2E.ContextInfo) {
+//	portal := getPortal(ctx)
+//	portalMeta := portal.Metadata.(*waid.PortalMetadata)
+//	disappear := database.DisappearingSetting{
+//		Type:  event.DisappearingTypeAfterSend,
+//		Timer: time.Duration(msg.GetEphemeralExpiration()) * time.Second,
+//	}
+//	if disappear.Timer == 0 {
+//		disappear.Type = ""
+//	}
+//	dontBridge := portal.Disappear == disappear
+//	content := bridgev2.DisappearingMessageNotice(disappear.Timer, false)
+//	if msg.EphemeralSettingTimestamp == nil || portalMeta.DisappearingTimerSetAt < msg.GetEphemeralSettingTimestamp() {
+//		portalMeta.DisappearingTimerSetAt = msg.GetEphemeralSettingTimestamp()
+//		portal.UpdateDisappearingSetting(ctx, disappear, bridgev2.UpdateDisappearingSettingOpts{
+//			Sender:     getIntent(ctx),
+//			Timestamp:  ts,
+//			Implicit:   false,
+//			Save:       true,
+//			SendNotice: false,
+//		})
+//	} else {
+//		content.Body += ", but the change was ignored."
+//	}
+//	return &bridgev2.ConvertedMessagePart{
+//		Type:    event.EventMessage,
+//		Content: content,
+//		Extra: map[string]any{
+//			"com.beeper.action_message": map[string]any{
+//				"type":       "disappearing_timer",
+//				"timer":      disappear.Timer.Milliseconds(),
+//				"timer_type": disappear.Type,
+//				"implicit":   false,
+//			},
+//		},
+//		DontBridge: dontBridge,
+//	}, nil
+//}
 
 const eventMessageTemplate = `
 {{- if .Name -}}

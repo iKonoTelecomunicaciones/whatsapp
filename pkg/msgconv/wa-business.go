@@ -21,12 +21,12 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/iKonoTelecomunicaciones/go/bridgev2"
+	"github.com/iKonoTelecomunicaciones/go/event"
+	"github.com/iKonoTelecomunicaciones/go/format"
 	"go.mau.fi/util/random"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
-	"maunium.net/go/mautrix/bridgev2"
-	"maunium.net/go/mautrix/event"
-	"maunium.net/go/mautrix/format"
 )
 
 func (mc *MessageConverter) convertTemplateMessage(ctx context.Context, info *types.MessageInfo, tplMsg *waE2E.TemplateMessage) (*bridgev2.ConvertedMessagePart, *waE2E.ContextInfo) {
@@ -75,11 +75,11 @@ func (mc *MessageConverter) convertTemplateMessage(ctx context.Context, info *ty
 	var convertedTitle *bridgev2.ConvertedMessagePart
 	switch title := tpl.GetTitle().(type) {
 	case *waE2E.TemplateMessage_HydratedFourRowTemplate_DocumentMessage:
-		convertedTitle, _ = mc.convertMediaMessage(ctx, title.DocumentMessage, "file attachment", info, false, nil)
+		convertedTitle, _, _ = mc.convertMediaMessage(ctx, title.DocumentMessage, "file attachment", info, false, nil)
 	case *waE2E.TemplateMessage_HydratedFourRowTemplate_ImageMessage:
-		convertedTitle, _ = mc.convertMediaMessage(ctx, title.ImageMessage, "photo", info, false, nil)
+		convertedTitle, _, _ = mc.convertMediaMessage(ctx, title.ImageMessage, "photo", info, false, nil)
 	case *waE2E.TemplateMessage_HydratedFourRowTemplate_VideoMessage:
-		convertedTitle, _ = mc.convertMediaMessage(ctx, title.VideoMessage, "video attachment", info, false, nil)
+		convertedTitle, _, _ = mc.convertMediaMessage(ctx, title.VideoMessage, "video attachment", info, false, nil)
 	case *waE2E.TemplateMessage_HydratedFourRowTemplate_LocationMessage:
 		content = fmt.Sprintf("Unsupported location message\n\n%s", content)
 	case *waE2E.TemplateMessage_HydratedFourRowTemplate_HydratedTitleText:
@@ -139,11 +139,11 @@ func (mc *MessageConverter) convertInteractiveMessage(ctx context.Context, info 
 	var convertedTitle *bridgev2.ConvertedMessagePart
 	switch headerMedia := msg.GetHeader().GetMedia().(type) {
 	case *waE2E.InteractiveMessage_Header_DocumentMessage:
-		convertedTitle, _ = mc.convertMediaMessage(ctx, headerMedia.DocumentMessage, "file attachment", info, false, nil)
+		convertedTitle, _, _ = mc.convertMediaMessage(ctx, headerMedia.DocumentMessage, "file attachment", info, false, nil)
 	case *waE2E.InteractiveMessage_Header_ImageMessage:
-		convertedTitle, _ = mc.convertMediaMessage(ctx, headerMedia.ImageMessage, "photo", info, false, nil)
+		convertedTitle, _, _ = mc.convertMediaMessage(ctx, headerMedia.ImageMessage, "photo", info, false, nil)
 	case *waE2E.InteractiveMessage_Header_VideoMessage:
-		convertedTitle, _ = mc.convertMediaMessage(ctx, headerMedia.VideoMessage, "video attachment", info, false, nil)
+		convertedTitle, _, _ = mc.convertMediaMessage(ctx, headerMedia.VideoMessage, "video attachment", info, false, nil)
 	case *waE2E.InteractiveMessage_Header_LocationMessage:
 		content = fmt.Sprintf("Unsupported location message\n\n%s", content)
 	case *waE2E.InteractiveMessage_Header_ProductMessage:
@@ -185,11 +185,11 @@ func (mc *MessageConverter) convertButtonsMessage(ctx context.Context, info *typ
 	var convertedHeader *bridgev2.ConvertedMessagePart
 	switch header := msg.GetHeader().(type) {
 	case *waE2E.ButtonsMessage_DocumentMessage:
-		convertedHeader, _ = mc.convertMediaMessage(ctx, header.DocumentMessage, "file attachment", info, false, nil)
+		convertedHeader, _, _ = mc.convertMediaMessage(ctx, header.DocumentMessage, "file attachment", info, false, nil)
 	case *waE2E.ButtonsMessage_ImageMessage:
-		convertedHeader, _ = mc.convertMediaMessage(ctx, header.ImageMessage, "photo", info, false, nil)
+		convertedHeader, _, _ = mc.convertMediaMessage(ctx, header.ImageMessage, "photo", info, false, nil)
 	case *waE2E.ButtonsMessage_VideoMessage:
-		convertedHeader, _ = mc.convertMediaMessage(ctx, header.VideoMessage, "video attachment", info, false, nil)
+		convertedHeader, _, _ = mc.convertMediaMessage(ctx, header.VideoMessage, "video attachment", info, false, nil)
 	case *waE2E.ButtonsMessage_LocationMessage:
 		content = fmt.Sprintf("Unsupported location message\n\n%s", content)
 	case *waE2E.ButtonsMessage_Text:

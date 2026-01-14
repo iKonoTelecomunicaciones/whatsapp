@@ -24,8 +24,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/iKonoTelecomunicaciones/go/bridgev2/networkid"
 	"go.mau.fi/whatsmeow/types"
-	"maunium.net/go/mautrix/bridgev2/networkid"
 )
 
 const (

@@ -1,19 +1,63 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
+	"github.com/iKonoTelecomunicaciones/go/event"
+
+	"github.com/iKonoTelecomunicaciones/go/bridgev2"
+	"github.com/iKonoTelecomunicaciones/go/bridgev2/matrix"
+	"github.com/iKonoTelecomunicaciones/go/id"
 	"github.com/rs/zerolog/hlog"
 	"go.mau.fi/util/exhttp"
 	"go.mau.fi/whatsmeow/types"
-	"maunium.net/go/mautrix/bridgev2"
-	"maunium.net/go/mautrix/bridgev2/matrix"
-	"maunium.net/go/mautrix/id"
 
-	"go.mau.fi/mautrix-whatsapp/pkg/connector"
-	"go.mau.fi/mautrix-whatsapp/pkg/waid"
+	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/connector"
+	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/waid"
 )
+
+//var upgrader = websocket.Upgrader{
+//	CheckOrigin: func(r *http.Request) bool {
+//		return true
+//	},
+//	Subprotocols: []string{"net.maunium.whatsapp.login"},
+//}
+
+func legacyProvAuth(r *http.Request) string {
+	if !strings.HasSuffix(r.URL.Path, "/v1/login") {
+		return ""
+	}
+	authParts := strings.Split(r.Header.Get("Sec-WebSocket-Protocol"), ",")
+	for _, part := range authParts {
+		part = strings.TrimSpace(part)
+		if strings.HasPrefix(part, "net.maunium.whatsapp.auth-") {
+			return strings.TrimPrefix(part, "net.maunium.whatsapp.auth-")
+		}
+	}
+	return ""
+}
+
+type ConnInfo struct {
+	IsConnected bool `json:"is_connected"`
+	IsLoggedIn  bool `json:"is_logged_in"`
+}
+
+type ConnectionInfo struct {
+	HasSession     bool      `json:"has_session"`
+	ManagementRoom id.RoomID `json:"management_room"`
+	Conn           ConnInfo  `json:"conn"`
+	JID            string    `json:"jid"`
+	Phone          string    `json:"phone"`
+	Platform       string    `json:"platform"`
+}
+
+type PingInfo struct {
+	WhatsappConnectionInfo ConnectionInfo `json:"whatsapp"`
+	Mxid                   id.UserID      `json:"mxid"`
+}
 
 type OtherUserInfo struct {
 	MXID   id.UserID           `json:"mxid"`
@@ -33,6 +77,17 @@ type Error struct {
 	Success bool   `json:"success"`
 	Error   string `json:"error"`
 	ErrCode string `json:"errcode"`
+}
+
+type Response struct {
+	Success bool   `json:"success"`
+	Status  string `json:"status"`
+}
+
+type SetEventBody struct {
+	RoomID     string `json:"room_id"`
+	PowerLevel int    `json:"power_level"`
+	UserID     string `json:"user_id"`
 }
 
 func legacyProvContacts(w http.ResponseWriter, r *http.Request) {
@@ -109,4 +164,333 @@ func legacyProvResolveIdentifier(w http.ResponseWriter, r *http.Request) {
 			Avatar: resp.Ghost.AvatarMXC,
 		},
 	})
+}
+
+func legacyProvPing(w http.ResponseWriter, r *http.Request) {
+	userLogin := m.Matrix.Provisioning.GetLoginForRequest(w, r)
+
+	if userLogin == nil {
+		return
+	}
+
+	whatsappClient := userLogin.Client.(*connector.WhatsAppClient)
+	managementRoom, err := userLogin.User.GetManagementRoom(r.Context())
+
+	if err != nil {
+		exhttp.WriteJSONResponse(w, http.StatusInternalServerError, Error{
+			Error:   "Error while fetching management room",
+			ErrCode: "failed to get management room",
+		})
+		return
+	}
+
+	whatsappConnectionInfo := ConnectionInfo{
+		HasSession:     whatsappClient.IsLoggedIn(),
+		ManagementRoom: managementRoom,
+	}
+
+	if !whatsappClient.JID.IsEmpty() {
+		whatsappConnectionInfo.JID = whatsappClient.JID.String()
+		whatsappConnectionInfo.Phone = "+" + whatsappClient.JID.User
+		if whatsappClient.Device != nil && whatsappClient.Device.Platform != "" {
+			whatsappConnectionInfo.Platform = whatsappClient.Device.Platform
+		}
+	}
+
+	if whatsappClient.Client != nil {
+		whatsappConnectionInfo.Conn = ConnInfo{
+			IsConnected: whatsappClient.Client.IsConnected(),
+			IsLoggedIn:  whatsappClient.Client.IsLoggedIn(),
+		}
+	}
+
+	resp := PingInfo{
+		WhatsappConnectionInfo: whatsappConnectionInfo,
+		Mxid:                   whatsappClient.UserLogin.User.MXID,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	exhttp.WriteJSONResponse(w, http.StatusOK, resp)
+}
+
+func legacyProvRoomInfo(w http.ResponseWriter, r *http.Request) {
+	userLogin := m.Matrix.Provisioning.GetLoginForRequest(w, r)
+
+	if userLogin == nil {
+		return
+	}
+
+	room_id := r.URL.Query().Get("room_id")
+
+	if room_id == "" {
+		exhttp.WriteJSONResponse(w, http.StatusBadRequest, Error{
+			Error:   "Missing room_id",
+			ErrCode: "missing room_id",
+		})
+		return
+	}
+
+	portal, err := m.Bridge.GetPortalByMXID(r.Context(), id.RoomID(room_id))
+
+	if err != nil {
+		exhttp.WriteJSONResponse(w, http.StatusInternalServerError, Error{
+			Error:   "Error while fetching portal",
+			ErrCode: "failed to get portal",
+		})
+		return
+	}
+
+	if portal == nil {
+		exhttp.WriteJSONResponse(w, http.StatusNotFound, Error{
+			Error:   "Portal not found",
+			ErrCode: "portal not found",
+		})
+		return
+	}
+
+	whatsappClient := userLogin.Client.(*connector.WhatsAppClient)
+	chatInfo, err := whatsappClient.GetChatInfo(r.Context(), portal)
+
+	if err != nil {
+		exhttp.WriteJSONResponse(w, http.StatusInternalServerError, Error{
+			Error:   "Error while fetching chat info",
+			ErrCode: "failed to get chat info",
+		})
+		return
+	}
+
+	portalInfo := map[string]interface{}{
+		"room_id":    portal.MXID,
+		"name":       chatInfo.Name,
+		"topic":      *chatInfo.Topic,
+		"avatar":     chatInfo.Avatar,
+		"members":    &chatInfo.Members.MemberMap,
+		"join_rule":  chatInfo.JoinRule,
+		"type":       *chatInfo.Type,
+		"disappear":  chatInfo.Disappear,
+		"parent_id":  chatInfo.ParentID,
+		"user_local": *chatInfo.UserLocal,
+	}
+
+	exhttp.WriteJSONResponse(w, http.StatusOK, portalInfo)
+}
+
+func legacyProvSetPowerlevels(w http.ResponseWriter, r *http.Request) {
+	var body SetEventBody
+	err := json.NewDecoder(r.Body).Decode(&body)
+
+	if err != nil {
+		http.Error(w, "Can't read body", http.StatusBadRequest)
+		return
+	}
+
+	log := hlog.FromRequest(r)
+	userLogin := m.Matrix.Provisioning.GetLoginForRequest(w, r)
+	if userLogin == nil {
+		return
+	}
+
+	roomID := body.RoomID
+	powerLevel := body.PowerLevel
+	userID := body.UserID
+
+	if roomID == "" {
+		exhttp.WriteJSONResponse(w, http.StatusBadRequest, Error{
+			Error:   "Missing room_id",
+			ErrCode: "missing room_id",
+		})
+		return
+	}
+
+	if powerLevel < 0 {
+		exhttp.WriteJSONResponse(w, http.StatusBadRequest, Error{
+			Error:   "Invalid power level",
+			ErrCode: "invalid power level",
+		})
+		return
+	}
+
+	if userID == "" {
+		exhttp.WriteJSONResponse(w, http.StatusBadRequest, Error{
+			Error:   "Missing user_id",
+			ErrCode: "missing user_id",
+		})
+		return
+	}
+
+	// Get the portal by room ID
+	portal, err := m.Bridge.GetPortalByMXID(r.Context(), id.RoomID(roomID))
+
+	if err != nil {
+		exhttp.WriteJSONResponse(w, http.StatusInternalServerError, Error{
+			Error:   "Error while fetching portal",
+			ErrCode: "failed to get portal",
+		})
+		return
+	}
+
+	if portal == nil {
+		exhttp.WriteJSONResponse(w, http.StatusNotFound, Error{
+			Error:   "Portal not found",
+			ErrCode: "portal not found",
+		})
+		return
+	}
+
+	// Get members of the portal
+	powerLevels, err := portal.Bridge.Matrix.GetPowerLevels(r.Context(), portal.MXID)
+
+	if err != nil {
+		exhttp.WriteJSONResponse(w, http.StatusInternalServerError, Error{
+			Error:   "Error while fetching portal members",
+			ErrCode: "failed to get portal members",
+		})
+		return
+	}
+
+	// Change the power level of the user
+	powerLevels.Users[id.UserID(userID)] = powerLevel
+
+	botIntent := m.Bridge.Matrix.BotIntent()
+
+	content := event.Content{
+		Parsed: &powerLevels,
+	}
+
+	// Send the state event to the portal
+	event, err := botIntent.SendState(r.Context(), portal.MXID, event.StatePowerLevels, "", &content, time.Now())
+
+	if err != nil {
+		log.Error().Err(err).Msg("Error while changing power levels")
+		exhttp.WriteJSONResponse(w, http.StatusInternalServerError, Error{
+			Error:   "Error while changing power levels",
+			ErrCode: "failed to change power levels",
+		})
+		return
+	}
+
+	resp := Response{
+		Success: true,
+		Status: "Successfully updated power level for user " + userID +
+			". Event ID: " + event.EventID.String() + " room ID: " + roomID,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	exhttp.WriteJSONResponse(w, http.StatusOK, resp)
+}
+
+func legacyProvSetRelay(w http.ResponseWriter, r *http.Request) {
+	var body SetEventBody
+	err := json.NewDecoder(r.Body).Decode(&body)
+
+	if err != nil {
+		http.Error(w, "Can't read body", http.StatusBadRequest)
+		return
+	}
+
+	log := hlog.FromRequest(r)
+	userLogin := m.Matrix.Provisioning.GetLoginForRequest(w, r)
+	if userLogin == nil {
+		return
+	}
+
+	roomID := body.RoomID
+	if roomID == "" {
+		exhttp.WriteJSONResponse(w, http.StatusBadRequest, Error{
+			Error:   "Missing room_id",
+			ErrCode: "missing room_id",
+		})
+		return
+	}
+
+	// Get the portal by room ID
+	portal, err := m.Bridge.GetPortalByMXID(r.Context(), id.RoomID(roomID))
+
+	if err != nil {
+		exhttp.WriteJSONResponse(w, http.StatusInternalServerError, Error{
+			Error:   "Error while fetching portal",
+			ErrCode: "failed to get portal",
+		})
+		return
+	}
+	if portal == nil {
+		exhttp.WriteJSONResponse(w, http.StatusNotFound, Error{
+			Error:   "Portal not found",
+			ErrCode: "portal not found",
+		})
+		return
+	}
+
+	err = portal.SetRelay(r.Context(), userLogin)
+
+	if err != nil {
+		log.Error().Err(err).Msg("Error while setting relay")
+		exhttp.WriteJSONResponse(w, http.StatusInternalServerError, Error{
+			Error:   "Error while setting relay",
+			ErrCode: "failed to set relay",
+		})
+		return
+	}
+
+	resp := Response{
+		Success: true,
+		Status:  "Successfully set relay for room " + roomID,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	exhttp.WriteJSONResponse(w, http.StatusOK, resp)
+}
+
+func legacyProvValidateSetRelay(w http.ResponseWriter, r *http.Request) {
+	roomID := r.PathValue("roomID")
+
+	log := hlog.FromRequest(r)
+	userLogin := m.Matrix.Provisioning.GetLoginForRequest(w, r)
+	if userLogin == nil {
+		return
+	}
+
+	// Get the portal by room ID
+	portal, err := m.Bridge.GetPortalByMXID(r.Context(), id.RoomID(roomID))
+
+	if err != nil {
+		exhttp.WriteJSONResponse(w, http.StatusInternalServerError, Error{
+			Error:   "Error while fetching portal",
+			ErrCode: "failed to get portal",
+		})
+		return
+	}
+	if portal == nil {
+		exhttp.WriteJSONResponse(w, http.StatusNotFound, Error{
+			Error:   "Portal not found",
+			ErrCode: "portal not found",
+		})
+		return
+	}
+
+	log.Debug().Str("user_login", string(userLogin.User.MXID)).Str("room_id", roomID).Msg(
+		"Validating set relay for room and user login",
+	)
+
+	var resp Response
+	var statusCode int
+	hasPortalRelay := portal.Relay
+
+	if hasPortalRelay != nil && portal.Relay.User.MXID == userLogin.User.MXID {
+		resp = Response{
+			Success: true,
+			Status:  "The room already has a relay set for this user",
+		}
+		statusCode = http.StatusOK
+	} else {
+		resp = Response{
+			Success: false,
+			Status:  "The room does not have a relay set for this user",
+		}
+
+		statusCode = http.StatusBadRequest
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	exhttp.WriteJSONResponse(w, statusCode, resp)
 }

@@ -3,8 +3,8 @@ package wadb
 import (
 	"context"
 
+	"github.com/iKonoTelecomunicaciones/go/bridgev2/networkid"
 	"go.mau.fi/util/dbutil"
-	"maunium.net/go/mautrix/bridgev2/networkid"
 )
 
 type MediaBackfillRequestStatus int
