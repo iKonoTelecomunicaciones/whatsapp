@@ -24,9 +24,9 @@ import (
 	"math"
 	"net/http"
 
+	"github.com/iKonoTelecomunicaciones/go/bridgev2"
+	"github.com/iKonoTelecomunicaciones/go/event"
 	"go.mau.fi/whatsmeow/proto/waE2E"
-	"maunium.net/go/mautrix/bridgev2"
-	"maunium.net/go/mautrix/event"
 )
 
 func (mc *MessageConverter) convertLocationMessage(ctx context.Context, msg *waE2E.LocationMessage) (*bridgev2.ConvertedMessagePart, *waE2E.ContextInfo) {

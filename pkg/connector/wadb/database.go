@@ -1,11 +1,11 @@
 package wadb
 
 import (
+	"github.com/iKonoTelecomunicaciones/go/bridgev2/networkid"
 	"github.com/rs/zerolog"
 	"go.mau.fi/util/dbutil"
-	"maunium.net/go/mautrix/bridgev2/networkid"
 
-	"go.mau.fi/mautrix-whatsapp/pkg/connector/wadb/upgrades"
+	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/connector/wadb/upgrades"
 )
 
 type Database struct {

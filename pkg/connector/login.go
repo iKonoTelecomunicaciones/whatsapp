@@ -8,17 +8,17 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/iKonoTelecomunicaciones/go/bridgev2"
+	"github.com/iKonoTelecomunicaciones/go/bridgev2/database"
+	"github.com/iKonoTelecomunicaciones/go/bridgev2/status"
 	"github.com/rs/zerolog"
 	"go.mau.fi/util/exsync"
 	"go.mau.fi/util/jsontime"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
-	"maunium.net/go/mautrix/bridgev2"
-	"maunium.net/go/mautrix/bridgev2/database"
-	"maunium.net/go/mautrix/bridgev2/status"
 
-	"go.mau.fi/mautrix-whatsapp/pkg/waid"
+	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/waid"
 )
 
 const (
@@ -265,6 +265,7 @@ func (wl *WALogin) handleEvent(rawEvt any) {
 	case *events.PairSuccess:
 		wl.Log.Info().Any("event_data", evt).Msg("Got pair successful event")
 		wl.LoginSuccess = evt
+		wl.Main.Bridge.UpdateSetRelayFromUser(wl.Log.Debug().GetCtx(), evt.ID.User)
 	case *events.PairError:
 		wl.Log.Error().Any("event_data", evt).Msg("Got pair error event")
 		wl.LoginError = bridgev2.RespError{

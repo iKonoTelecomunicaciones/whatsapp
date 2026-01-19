@@ -3,14 +3,14 @@ package connector
 import (
 	"context"
 
+	"github.com/iKonoTelecomunicaciones/go/bridgev2"
+	"github.com/iKonoTelecomunicaciones/go/bridgev2/networkid"
 	"github.com/rs/zerolog"
 	"go.mau.fi/util/ptr"
 	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/types"
-	"maunium.net/go/mautrix/bridgev2"
-	"maunium.net/go/mautrix/bridgev2/networkid"
 
-	"go.mau.fi/mautrix-whatsapp/pkg/waid"
+	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/waid"
 )
 
 func (wa *WhatsAppClient) makeWAPortalKey(chatJID types.JID) networkid.PortalKey {
