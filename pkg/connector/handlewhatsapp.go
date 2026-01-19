@@ -252,8 +252,12 @@ func (wa *WhatsAppClient) handleWAEvent(rawEvt any) (success bool) {
 }
 
 func (wa *WhatsAppClient) rerouteWAMessage(ctx context.Context, evtType string, info *types.MessageSource, msgID any) {
-	if info.Chat.Server == types.HiddenUserServer && info.SenderAlt.IsEmpty() {
+	if (info.Chat.Server == types.HiddenUserServer || info.Chat.Server == types.BroadcastServer) &&
+		info.Sender.Server == types.HiddenUserServer && info.SenderAlt.IsEmpty() {
 		info.SenderAlt, _ = wa.GetStore().LIDs.GetPNForLID(ctx, info.Sender)
+	}
+	if info.Chat.Server == types.HiddenUserServer && info.IsFromMe && info.RecipientAlt.IsEmpty() {
+		info.RecipientAlt, _ = wa.GetStore().LIDs.GetPNForLID(ctx, info.Chat)
 	}
 	if info.Chat.Server == types.HiddenUserServer && info.Sender.ToNonAD() == info.Chat && info.SenderAlt.Server == types.DefaultUserServer {
 		wa.UserLogin.Log.Debug().
@@ -279,6 +283,15 @@ func (wa *WhatsAppClient) rerouteWAMessage(ctx context.Context, evtType string, 
 				info.Sender.Device = info.SenderAlt.Device
 			}
 		}
+	} else if info.Chat.Server == types.BroadcastServer && info.Sender.Server == types.HiddenUserServer && info.SenderAlt.Server == types.DefaultUserServer {
+		wa.UserLogin.Log.Debug().
+			Stringer("lid", info.Sender).
+			Stringer("pn", info.SenderAlt).
+			Stringer("chat", info.Chat).
+			Any("message_id", msgID).
+			Str("evt_type", evtType).
+			Msg("Forced LID broadcast list sender to phone number in incoming message")
+		info.Sender, info.SenderAlt = info.SenderAlt, info.Sender
 	} else if info.Sender.Server == types.BotServer && info.Chat.Server == types.HiddenUserServer {
 		chatPN, err := wa.GetStore().LIDs.GetPNForLID(ctx, info.Chat)
 		if err != nil {
@@ -413,6 +426,7 @@ func (wa *WhatsAppClient) handleWAUndecryptableMessage(ctx context.Context, evt 
 }
 
 func (wa *WhatsAppClient) handleWAReceipt(ctx context.Context, evt *events.Receipt) (success bool) {
+	origChat := evt.Chat
 	wa.rerouteWAMessage(ctx, "receipt", &evt.MessageSource, evt.MessageIDs)
 	if evt.IsFromMe && evt.Sender.Device == 0 {
 		wa.phoneSeen(evt.Timestamp)
@@ -432,6 +446,10 @@ func (wa *WhatsAppClient) handleWAReceipt(ctx context.Context, evt *events.Recei
 	messageSender := wa.JID
 	if !evt.MessageSender.IsEmpty() {
 		messageSender = evt.MessageSender
+		// Second part of rerouting receipts in LID chats
+		if messageSender == origChat && evt.Chat != origChat {
+			messageSender = evt.Chat
+		}
 	} else if evt.Chat.Server == types.GroupServer && evt.Sender.Server == types.HiddenUserServer {
 		lid := wa.GetStore().GetLID()
 		if !lid.IsEmpty() {
@@ -528,6 +546,7 @@ func (wa *WhatsAppClient) handleWACallStart(ctx context.Context, group, sender, 
 			Sender:       wa.makeEventSender(ctx, sender),
 			CreatePortal: true,
 			Timestamp:    ts,
+			StreamOrder:  ts.Unix(),
 		},
 		Data:               callType,
 		ID:                 waid.MakeFakeMessageID(chat, sender, "call-"+id),
@@ -603,6 +622,7 @@ func (wa *WhatsAppClient) handleWADeleteChat(evt *events.DeleteChat) bool {
 }
 
 func (wa *WhatsAppClient) handleWADeleteForMe(evt *events.DeleteForMe) bool {
+	// FIXME this doesn't handle IsFromMe properly, might also need LID fixes
 	return wa.UserLogin.QueueRemoteEvent(&simplevent.MessageRemove{
 		EventMeta: simplevent.EventMeta{
 			Type:      bridgev2.RemoteEventMessageRemove,

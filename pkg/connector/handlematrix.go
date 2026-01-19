@@ -501,8 +501,8 @@ func (wa *WhatsAppClient) HandleMatrixRoomAvatar(ctx context.Context, msg *bridg
 	}
 
 	var data []byte
-	if msg.Content.URL != "" || msg.Content.MSC3414File != nil {
-		data, err = msg.Portal.Bridge.Bot.DownloadMedia(ctx, msg.Content.URL, msg.Content.MSC3414File)
+	if msg.Content.URL != "" {
+		data, err = msg.Portal.Bridge.Bot.DownloadMedia(ctx, msg.Content.URL, nil)
 		if err != nil {
 			return false, fmt.Errorf("failed to download avatar: %w", err)
 		}
@@ -647,12 +647,21 @@ func (wa *WhatsAppClient) HandleMatrixDeleteChat(ctx context.Context, msg *bridg
 	if err != nil {
 		return err
 	}
+	if chatJID.Server == types.GroupServer {
+		memberInfo, err := wa.Main.Bridge.Matrix.GetMemberInfo(ctx, msg.Portal.MXID, wa.UserLogin.UserMXID)
+		if err != nil {
+			return fmt.Errorf("failed to get own member info: %w", err)
+		} else if memberInfo.Membership == event.MembershipJoin {
+			err = wa.Client.LeaveGroup(ctx, chatJID)
+			if err != nil {
+				// TODO ignore errors saying you already left the group?
+				return fmt.Errorf("failed to leave group before deleting chat: %w", err)
+			}
+		}
+	}
 	lastTS, lastKey, err := wa.getLastMessageInfo(ctx, chatJID, msg.Portal.PortalKey)
 	if err != nil {
 		return err
-	}
-	if lastKey == nil {
-		return fmt.Errorf("failed to delete chat: no messages found")
 	}
 	return wa.Client.SendAppState(ctx, appstate.BuildDeleteChat(chatJID, lastTS, lastKey))
 }

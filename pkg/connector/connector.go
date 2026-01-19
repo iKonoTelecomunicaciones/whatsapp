@@ -20,9 +20,12 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"net"
+	"net/http"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/iKonoTelecomunicaciones/go/bridgev2"
 	"github.com/iKonoTelecomunicaciones/go/bridgev2/commands"
@@ -68,9 +71,10 @@ func init() {
 }
 
 var (
-	_ bridgev2.NetworkConnector      = (*WhatsAppConnector)(nil)
-	_ bridgev2.MaxFileSizeingNetwork = (*WhatsAppConnector)(nil)
-	_ bridgev2.StoppableNetwork      = (*WhatsAppConnector)(nil)
+	_ bridgev2.NetworkConnector        = (*WhatsAppConnector)(nil)
+	_ bridgev2.MaxFileSizeingNetwork   = (*WhatsAppConnector)(nil)
+	_ bridgev2.StoppableNetwork        = (*WhatsAppConnector)(nil)
+	_ bridgev2.NetworkResettingNetwork = (*WhatsAppConnector)(nil)
 )
 
 func (wa *WhatsAppConnector) SetMaxFileSize(maxSize int64) {
@@ -256,8 +260,17 @@ func (wa *WhatsAppConnector) onFirstBackgroundConnect() {
 }
 
 func (wa *WhatsAppConnector) onFirstClientConnect() {
+	wa.Bridge.Log.Debug().Msg("Fetching latest WhatsApp web version number")
 	ctx := wa.Bridge.BackgroundCtx
-	ver, err := whatsmeow.GetLatestVersion(ctx, nil)
+	ver, err := whatsmeow.GetLatestVersion(ctx, &http.Client{
+		Transport: &http.Transport{
+			DialContext:           (&net.Dialer{Timeout: 5 * time.Second}).DialContext,
+			TLSHandshakeTimeout:   5 * time.Second,
+			ResponseHeaderTimeout: 5 * time.Second,
+			ForceAttemptHTTP2:     true,
+		},
+		Timeout: 10 * time.Second,
+	})
 	if err != nil {
 		wa.Bridge.Log.Err(err).Msg("Failed to get latest WhatsApp web version number")
 	} else {
@@ -277,4 +290,14 @@ func (wa *WhatsAppConnector) GenerateTransactionID(_ id.UserID, _ id.RoomID, _ e
 	// The "proper" way would be a hash of the user ID among other things, but the hash includes random bytes too,
 	// so nobody can tell the difference if we just generate random bytes.
 	return networkid.RawTransactionID(whatsmeow.WebMessageIDPrefix + strings.ToUpper(hex.EncodeToString(random.Bytes(9))))
+}
+
+func (wa *WhatsAppConnector) ResetHTTPTransport() {
+	// No-op for now, whatsmeow doesn't use the shared transport config yet
+}
+
+func (wa *WhatsAppConnector) ResetNetworkConnections() {
+	for _, login := range wa.Bridge.GetAllCachedUserLogins() {
+		login.Client.(*WhatsAppClient).Client.ResetConnection()
+	}
 }
