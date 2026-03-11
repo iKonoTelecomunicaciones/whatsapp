@@ -23,17 +23,17 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/iKonoTelecomunicaciones/go/bridgev2"
+	"github.com/iKonoTelecomunicaciones/go/bridgev2/networkid"
+	"github.com/iKonoTelecomunicaciones/go/event"
 	"github.com/rs/zerolog"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
-	"maunium.net/go/mautrix/bridgev2"
-	"maunium.net/go/mautrix/bridgev2/networkid"
-	"maunium.net/go/mautrix/event"
 
-	"go.mau.fi/mautrix-whatsapp/pkg/waid"
+	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/waid"
 )
 
 func (mc *MessageConverter) convertPollCreationMessage(ctx context.Context, msg *waE2E.PollCreationMessage) (*bridgev2.ConvertedMessagePart, *waE2E.ContextInfo) {

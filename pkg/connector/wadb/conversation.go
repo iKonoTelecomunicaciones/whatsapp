@@ -5,12 +5,12 @@ import (
 	"database/sql"
 	"time"
 
+	"github.com/iKonoTelecomunicaciones/go/bridgev2/networkid"
 	"go.mau.fi/util/dbutil"
 	"go.mau.fi/util/jsontime"
 	"go.mau.fi/util/ptr"
 	"go.mau.fi/whatsmeow/proto/waHistorySync"
 	"go.mau.fi/whatsmeow/types"
-	"maunium.net/go/mautrix/bridgev2/networkid"
 )
 
 type ConversationQuery struct {

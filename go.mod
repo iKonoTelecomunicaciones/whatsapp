@@ -1,12 +1,13 @@
-module go.mau.fi/mautrix-whatsapp
+module github.com/iKonoTelecomunicaciones/whatsapp
 
-go 1.25.0
+go 1.26
 
 toolchain go1.26.0
 
 tool go.mau.fi/util/cmd/maubuild
 
 require (
+	github.com/iKonoTelecomunicaciones/go v0.26.3
 	github.com/lib/pq v1.11.2
 	github.com/rs/zerolog v1.34.0
 	go.mau.fi/util v0.9.6
@@ -17,7 +18,6 @@ require (
 	golang.org/x/sync v0.19.0
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
-	maunium.net/go/mautrix v0.26.3
 )
 
 require (

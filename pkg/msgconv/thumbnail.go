@@ -24,10 +24,10 @@ import (
 	"image/jpeg"
 	"image/png"
 
+	"github.com/iKonoTelecomunicaciones/go/event"
+	"github.com/iKonoTelecomunicaciones/go/id"
 	"github.com/rs/zerolog"
 	"golang.org/x/image/draw"
-	"maunium.net/go/mautrix/event"
-	"maunium.net/go/mautrix/id"
 )
 
 const thumbnailMaxSize = 72

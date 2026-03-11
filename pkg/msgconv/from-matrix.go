@@ -31,6 +31,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/iKonoTelecomunicaciones/go/bridgev2"
+	"github.com/iKonoTelecomunicaciones/go/bridgev2/database"
+	"github.com/iKonoTelecomunicaciones/go/event"
+	"github.com/iKonoTelecomunicaciones/go/format"
+	"github.com/iKonoTelecomunicaciones/go/id"
 	"github.com/rs/zerolog"
 	"go.mau.fi/util/ffmpeg"
 	"go.mau.fi/util/ptr"
@@ -40,13 +45,8 @@ import (
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	"google.golang.org/protobuf/proto"
-	"maunium.net/go/mautrix/bridgev2"
-	"maunium.net/go/mautrix/bridgev2/database"
-	"maunium.net/go/mautrix/event"
-	"maunium.net/go/mautrix/format"
-	"maunium.net/go/mautrix/id"
 
-	"go.mau.fi/mautrix-whatsapp/pkg/waid"
+	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/waid"
 )
 
 func (mc *MessageConverter) generateContextInfo(ctx context.Context, replyTo *database.Message, portal *bridgev2.Portal, perMessageTimer *event.BeeperDisappearingTimer) *waE2E.ContextInfo {

@@ -4,14 +4,14 @@ import (
 	"context"
 	"time"
 
+	"github.com/iKonoTelecomunicaciones/go/bridgev2"
+	"github.com/iKonoTelecomunicaciones/go/bridgev2/database"
+	"github.com/iKonoTelecomunicaciones/go/event"
 	"go.mau.fi/util/ffmpeg"
 	"go.mau.fi/util/jsontime"
 	"go.mau.fi/util/ptr"
-	"maunium.net/go/mautrix/bridgev2"
-	"maunium.net/go/mautrix/bridgev2/database"
-	"maunium.net/go/mautrix/event"
 
-	"go.mau.fi/mautrix-whatsapp/pkg/waid"
+	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/waid"
 )
 
 var WhatsAppGeneralCaps = &bridgev2.NetworkGeneralCapabilities{

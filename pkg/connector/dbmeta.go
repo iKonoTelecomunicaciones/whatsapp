@@ -1,9 +1,9 @@
 package connector
 
 import (
-	"maunium.net/go/mautrix/bridgev2/database"
+	"github.com/iKonoTelecomunicaciones/go/bridgev2/database"
 
-	"go.mau.fi/mautrix-whatsapp/pkg/waid"
+	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/waid"
 )
 
 func (wa *WhatsAppConnector) GetDBMetaTypes() database.MetaTypes {

@@ -20,12 +20,12 @@ import (
 	"context"
 	"time"
 
+	"github.com/iKonoTelecomunicaciones/go/bridgev2/status"
 	"go.mau.fi/util/jsontime"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waE2E"
-	"maunium.net/go/mautrix/bridgev2/status"
 
-	"go.mau.fi/mautrix-whatsapp/pkg/waid"
+	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/waid"
 )
 
 var _ status.BridgeStateFiller = (*WhatsAppClient)(nil)
