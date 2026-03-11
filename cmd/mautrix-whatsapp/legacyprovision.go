@@ -6,13 +6,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/iKonoTelecomunicaciones/go/event"
-
+	mautrix "github.com/iKonoTelecomunicaciones/go"
 	"github.com/iKonoTelecomunicaciones/go/bridgev2"
 	"github.com/iKonoTelecomunicaciones/go/bridgev2/matrix"
+	"github.com/iKonoTelecomunicaciones/go/event"
 	"github.com/iKonoTelecomunicaciones/go/id"
 	"github.com/rs/zerolog/hlog"
 	"go.mau.fi/util/exhttp"
+	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/appstate"
 	"go.mau.fi/whatsmeow/types"
 
 	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/connector"
@@ -493,4 +495,42 @@ func legacyProvValidateSetRelay(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	exhttp.WriteJSONResponse(w, statusCode, resp)
+}
+
+func provAppStateDebug(w http.ResponseWriter, r *http.Request) {
+	userLogin := m.Matrix.Provisioning.GetLoginForRequest(w, r)
+	if userLogin == nil {
+		return
+	}
+	client := userLogin.Client.(*connector.WhatsAppClient)
+	if client.Client == nil {
+		mautrix.MNotFound.WithMessage("WhatsApp client not connected").Write(w)
+		return
+	}
+	client.Client.AppStateDebugLogs = true
+	err := client.Client.FetchAppState(r.Context(), appstate.WAPatchName(r.PathValue("patch")), r.URL.Query().Get("full") == "1", false)
+	client.Client.AppStateDebugLogs = false
+	if err != nil {
+		mautrix.MUnknown.WithMessage("Failed to fetch app state: %v", err).Write(w)
+	} else {
+		exhttp.WriteEmptyJSONResponse(w, http.StatusOK)
+	}
+}
+
+func provRecoverAppStateDebug(w http.ResponseWriter, r *http.Request) {
+	userLogin := m.Matrix.Provisioning.GetLoginForRequest(w, r)
+	if userLogin == nil {
+		return
+	}
+	client := userLogin.Client.(*connector.WhatsAppClient)
+	if client.Client == nil {
+		mautrix.MNotFound.WithMessage("WhatsApp client not connected").Write(w)
+		return
+	}
+	resp, err := client.Client.SendPeerMessage(r.Context(), whatsmeow.BuildAppStateRecoveryRequest(appstate.WAPatchName(r.PathValue("patch"))))
+	if err != nil {
+		mautrix.MUnknown.WithMessage("Failed to send app state recovery request: %v", err).Write(w)
+	} else {
+		exhttp.WriteJSONResponse(w, http.StatusOK, resp)
+	}
 }

@@ -18,7 +18,7 @@ var m = mxmain.BridgeMain{
 	Name:        "mautrix-whatsapp",
 	URL:         "https://github.com/mautrix/whatsapp",
 	Description: "A Matrix-WhatsApp puppeting bridge.",
-	Version:     "26.01",
+	Version:     "26.02",
 	SemCalVer:   true,
 	Connector:   &connector.WhatsAppConnector{},
 }
@@ -35,6 +35,8 @@ func main() {
 			m.Matrix.Provisioning.Router.HandleFunc("POST /v1/set_relay", legacyProvSetRelay)
 			m.Matrix.Provisioning.Router.HandleFunc("GET /v1/set_relay/{roomID}", legacyProvValidateSetRelay)
 			m.Matrix.Provisioning.GetAuthFromRequest = legacyProvAuth
+			m.Matrix.Provisioning.Router.HandleFunc("POST /v1/debug/appstate/{patch}", provAppStateDebug)
+			m.Matrix.Provisioning.Router.HandleFunc("POST /v1/debug/recover-appstate/{patch}", provRecoverAppStateDebug)
 		}
 	}
 	m.InitVersion(Tag, Commit, BuildTime)
