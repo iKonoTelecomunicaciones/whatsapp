@@ -19,11 +19,11 @@ package msgconv
 import (
 	"sync"
 
+	"github.com/iKonoTelecomunicaciones/go/bridgev2"
+	"github.com/iKonoTelecomunicaciones/go/format"
 	"go.mau.fi/whatsmeow/types"
-	"maunium.net/go/mautrix/bridgev2"
-	"maunium.net/go/mautrix/format"
 
-	"go.mau.fi/mautrix-whatsapp/pkg/connector/wadb"
+	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/connector/wadb"
 )
 
 type AnimatedStickerConfig struct {

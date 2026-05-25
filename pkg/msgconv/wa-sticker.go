@@ -32,6 +32,11 @@ import (
 	"strconv"
 	"strings"
 
+	mautrix "github.com/iKonoTelecomunicaciones/go"
+	"github.com/iKonoTelecomunicaciones/go/bridgev2"
+	"github.com/iKonoTelecomunicaciones/go/bridgev2/database"
+	"github.com/iKonoTelecomunicaciones/go/bridgev2/networkid"
+	"github.com/iKonoTelecomunicaciones/go/event"
 	"github.com/rs/zerolog"
 	"github.com/tidwall/gjson"
 	"go.mau.fi/util/exstrings"
@@ -39,13 +44,8 @@ import (
 	"go.mau.fi/util/random"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types"
-	"maunium.net/go/mautrix"
-	"maunium.net/go/mautrix/bridgev2"
-	"maunium.net/go/mautrix/bridgev2/database"
-	"maunium.net/go/mautrix/bridgev2/networkid"
-	"maunium.net/go/mautrix/event"
 
-	"go.mau.fi/mautrix-whatsapp/pkg/waid"
+	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/waid"
 )
 
 func (mc *MessageConverter) GetCachedStickerPack(ctx context.Context, client *whatsmeow.Client, packID string) (*types.StickerPack, error) {

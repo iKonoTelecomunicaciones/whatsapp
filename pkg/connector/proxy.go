@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"net/url"
 
+	mautrix "github.com/iKonoTelecomunicaciones/go"
 	"github.com/rs/zerolog"
 	"go.mau.fi/whatsmeow"
-	"maunium.net/go/mautrix"
 )
 
 // TODO move proxy stuff to mautrix-go

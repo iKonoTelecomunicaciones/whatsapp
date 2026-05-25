@@ -20,10 +20,10 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/iKonoTelecomunicaciones/go/bridgev2"
+	"github.com/iKonoTelecomunicaciones/go/event"
 	"github.com/rs/zerolog"
 	"go.mau.fi/whatsmeow/proto/waE2E"
-	"maunium.net/go/mautrix/bridgev2"
-	"maunium.net/go/mautrix/event"
 )
 
 func (mc *MessageConverter) convertContactMessage(ctx context.Context, msg *waE2E.ContactMessage) (part *bridgev2.ConvertedMessagePart, contextInfo *waE2E.ContextInfo) {

@@ -21,9 +21,9 @@ import (
 	"database/sql"
 	"errors"
 
+	"github.com/iKonoTelecomunicaciones/go/bridgev2/networkid"
 	"go.mau.fi/util/dbutil"
 	"google.golang.org/protobuf/proto"
-	"maunium.net/go/mautrix/bridgev2/networkid"
 
 	"go.mau.fi/whatsmeow/proto/waE2E"
 )
