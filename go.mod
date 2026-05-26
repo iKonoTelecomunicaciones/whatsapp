@@ -2,6 +2,8 @@ module github.com/iKonoTelecomunicaciones/whatsapp
 
 go 1.26
 
+toolchain go1.26.3
+
 tool go.mau.fi/util/cmd/maubuild
 
 require (
