@@ -37,8 +37,6 @@ func main() {
 			m.Matrix.Provisioning.Router.HandleFunc("POST /v1/set_relay", legacyProvSetRelay)
 			m.Matrix.Provisioning.Router.HandleFunc("GET /v1/set_relay/{roomID}", legacyProvValidateSetRelay)
 			m.Matrix.Provisioning.GetAuthFromRequest = legacyProvAuth
-			m.Matrix.Provisioning.Router.HandleFunc("POST /v1/debug/appstate/{patch}", provAppStateDebug)
-			m.Matrix.Provisioning.Router.HandleFunc("POST /v1/debug/recover-appstate/{patch}", provRecoverAppStateDebug)
 		}
 	}
 	m.InitVersion(Tag, Commit, BuildTime)
