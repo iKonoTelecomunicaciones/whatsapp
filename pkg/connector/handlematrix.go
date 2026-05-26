@@ -107,6 +107,7 @@ func (wa *WhatsAppClient) handleConvertedMatrixMessage(ctx context.Context, msg 
 	wrappedMsgID2 := waid.MakeMessageID(chatJID, wa.GetStore().GetLID(), req.ID)
 	msg.AddPendingToIgnore(networkid.TransactionID(wrappedMsgID))
 	msg.AddPendingToIgnore(networkid.TransactionID(wrappedMsgID2))
+	zerolog.Ctx(ctx).Trace().Any("payload", waMsg).Msg("Outgoing message payload")
 	resp, err := wa.Client.SendMessage(ctx, chatJID, waMsg, *req)
 	if err != nil {
 		return nil, err
@@ -391,6 +392,10 @@ func (wa *WhatsAppClient) HandleMatrixDisappearingTimer(ctx context.Context, msg
 }
 
 func (wa *WhatsAppClient) HandleMatrixMembership(ctx context.Context, msg *bridgev2.MatrixMembershipChange) (*bridgev2.MatrixMembershipResult, error) {
+	if msg.Type.IsSelf && msg.OrigSender != nil {
+		return nil, nil
+	}
+
 	portalJID, err := waid.ParsePortalID(msg.Portal.ID)
 	if err != nil {
 		return nil, err

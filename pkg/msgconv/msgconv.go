@@ -17,8 +17,11 @@
 package msgconv
 
 import (
+	"sync"
+
 	"github.com/iKonoTelecomunicaciones/go/bridgev2"
 	"github.com/iKonoTelecomunicaciones/go/format"
+	"go.mau.fi/whatsmeow/types"
 
 	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/connector/wadb"
 )
@@ -43,12 +46,16 @@ type MessageConverter struct {
 	DisableViewOnce       bool
 	DirectMedia           bool
 	OldMediaSuffix        string
+
+	stickerPackCache     map[string]*types.StickerPack
+	stickerPackCacheLock sync.Mutex
 }
 
 func New(br *bridgev2.Bridge) *MessageConverter {
 	mc := &MessageConverter{
-		Bridge:      br,
-		MaxFileSize: 50 * 1024 * 1024,
+		Bridge:           br,
+		MaxFileSize:      50 * 1024 * 1024,
+		stickerPackCache: make(map[string]*types.StickerPack),
 	}
 	mc.HTMLParser = &format.HTMLParser{
 		PillConverter: mc.convertPill,

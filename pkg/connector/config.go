@@ -50,6 +50,7 @@ type Config struct {
 	ForceActiveDeliveryReceipts bool          `yaml:"force_active_delivery_receipts"`
 	DirectMediaAutoRequest      bool          `yaml:"direct_media_auto_request"`
 	InitialAutoReconnect        bool          `yaml:"initial_auto_reconnect"`
+	UseWhatsAppRetryStore       bool          `yaml:"use_whatsapp_retry_store"`
 
 	AnimatedSticker msgconv.AnimatedStickerConfig `yaml:"animated_sticker"`
 
@@ -69,6 +70,8 @@ type Config struct {
 			RequestLocalTime int                `yaml:"request_local_time"`
 			MaxAsyncHandle   int64              `yaml:"max_async_handle"`
 		} `yaml:"media_requests"`
+
+		BackwardsOnDemand bool `yaml:"backwards_on_demand"`
 	} `yaml:"history_sync"`
 
 	displaynameTemplate *template.Template `yaml:"-"`
@@ -116,6 +119,7 @@ func upgradeConfig(helper up.Helper) {
 	helper.Copy(up.Bool, "force_active_delivery_receipts")
 	helper.Copy(up.Bool, "direct_media_auto_request")
 	helper.Copy(up.Bool, "initial_auto_reconnect")
+	helper.Copy(up.Bool, "use_whatsapp_retry_store")
 
 	helper.Copy(up.Str, "animated_sticker", "target")
 	helper.Copy(up.Int, "animated_sticker", "args", "width")
@@ -132,6 +136,7 @@ func upgradeConfig(helper up.Helper) {
 	helper.Copy(up.Str, "history_sync", "media_requests", "request_method")
 	helper.Copy(up.Int, "history_sync", "media_requests", "request_local_time")
 	helper.Copy(up.Int, "history_sync", "media_requests", "max_async_handle")
+	helper.Copy(up.Bool, "history_sync", "backwards_on_demand")
 }
 
 type DisplaynameParams struct {

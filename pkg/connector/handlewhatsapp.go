@@ -111,9 +111,7 @@ func (wa *WhatsAppClient) handleWAEvent(rawEvt any) (success bool) {
 		success = wa.handleWAPin(evt)
 
 	case *events.HistorySync:
-		if wa.Main.Bridge.Config.Backfill.Enabled {
-			wa.historySyncs <- evt.Data
-		}
+		wa.UserLogin.Log.Warn().Msg("Unexpected history sync event received")
 	case *events.MediaRetry:
 		wa.phoneSeen(evt.Timestamp)
 		success = wa.UserLogin.QueueRemoteEvent(&WAMediaRetry{MediaRetry: evt, wa: wa}).Success
@@ -311,19 +309,54 @@ func (wa *WhatsAppClient) rerouteWAMessage(ctx context.Context, evtType string, 
 
 func (wa *WhatsAppClient) handleWAMessage(ctx context.Context, evt *events.Message) (success bool) {
 	success = true
+	if evt.Info.Chat == types.StatusBroadcastJID && !wa.Main.Config.EnableStatusBroadcast {
+		return
+	}
+	parsedMessageType := getMessageType(evt.Message)
+	if encReact := evt.Message.GetEncReactionMessage(); encReact != nil {
+		decrypted, err := wa.Client.DecryptReaction(ctx, evt)
+		if err != nil {
+			wa.UserLogin.Log.Err(err).Str("message_id", evt.Info.ID).Msg("Failed to decrypt reaction")
+			return
+		}
+		decrypted.Key = encReact.GetTargetMessageKey()
+		evt.Message.ReactionMessage = decrypted
+	}
+	if encComment := evt.Message.GetEncCommentMessage(); encComment != nil {
+		decrypted, err := wa.Client.DecryptComment(ctx, evt)
+		if err != nil {
+			wa.UserLogin.Log.Err(err).Str("message_id", evt.Info.ID).Msg("Failed to decrypt comment")
+		} else {
+			decrypted.EncCommentMessage = evt.Message.GetEncCommentMessage()
+			evt.Message = decrypted
+		}
+	}
+	if encMessage := evt.Message.GetSecretEncryptedMessage(); encMessage != nil {
+		decrypted, err := wa.Client.DecryptSecretEncryptedMessage(ctx, evt)
+		if err != nil {
+			wa.UserLogin.Log.Err(err).
+				Str("message_id", evt.Info.ID).
+				Stringer("evt_sender", evt.Info.Sender).
+				Any("target_message_key", encMessage.TargetMessageKey).
+				Msg("Failed to decrypt secret-encrypted message")
+			return
+		}
+		evt.RawMessage = decrypted
+		evt.UnwrapRaw()
+		parsedMessageType = getMessageType(evt.Message)
+	}
 	wa.rerouteWAMessage(ctx, "message", &evt.Info.MessageSource, evt.Info.ID)
 	wa.UserLogin.Log.Trace().
 		Any("info", evt.Info).
 		Any("payload", evt.Message).
 		Msg("Received WhatsApp message")
-	if evt.Info.Chat == types.StatusBroadcastJID && !wa.Main.Config.EnableStatusBroadcast {
-		return
-	}
 	if evt.Info.IsFromMe &&
 		evt.Message.GetProtocolMessage().GetHistorySyncNotification() != nil &&
-		wa.Main.Bridge.Config.Backfill.Enabled &&
-		wa.Client.ManualHistorySyncDownload {
+		wa.Main.Bridge.Config.Backfill.Enabled {
 		wa.saveWAHistorySyncNotification(ctx, evt.Message.ProtocolMessage.HistorySyncNotification)
+	}
+	if parsedMessageType == "ignore" || strings.HasPrefix(parsedMessageType, "unknown_protocol_") {
+		return
 	}
 
 	messageAssoc := evt.Message.GetMessageContextInfo().GetMessageAssociation()
@@ -353,38 +386,6 @@ func (wa *WhatsAppClient) handleWAMessage(ctx context.Context, evt *events.Messa
 		return
 	}
 
-	parsedMessageType := getMessageType(evt.Message)
-	if parsedMessageType == "ignore" || strings.HasPrefix(parsedMessageType, "unknown_protocol_") {
-		return
-	}
-	if encReact := evt.Message.GetEncReactionMessage(); encReact != nil {
-		decrypted, err := wa.Client.DecryptReaction(ctx, evt)
-		if err != nil {
-			wa.UserLogin.Log.Err(err).Str("message_id", evt.Info.ID).Msg("Failed to decrypt reaction")
-			return
-		}
-		decrypted.Key = encReact.GetTargetMessageKey()
-		evt.Message.ReactionMessage = decrypted
-	}
-	if encComment := evt.Message.GetEncCommentMessage(); encComment != nil {
-		decrypted, err := wa.Client.DecryptComment(ctx, evt)
-		if err != nil {
-			wa.UserLogin.Log.Err(err).Str("message_id", evt.Info.ID).Msg("Failed to decrypt comment")
-		} else {
-			decrypted.EncCommentMessage = evt.Message.GetEncCommentMessage()
-			evt.Message = decrypted
-		}
-	}
-	if encMessage := evt.Message.GetSecretEncryptedMessage(); encMessage != nil {
-		decrypted, err := wa.Client.DecryptSecretEncryptedMessage(ctx, evt)
-		if err != nil {
-			wa.UserLogin.Log.Err(err).Str("message_id", evt.Info.ID).Msg("Failed to decrypt message")
-			return
-		}
-		evt.RawMessage = decrypted
-		evt.UnwrapRaw()
-		parsedMessageType = getMessageType(evt.Message)
-	}
 	res := wa.UserLogin.QueueRemoteEvent(&WAMessageEvent{
 		MessageInfoWrapper: &MessageInfoWrapper{
 			Info: evt.Info,
@@ -507,7 +508,7 @@ func (wa *WhatsAppClient) handleWALogout(reason events.ConnectFailureReason, onC
 	} else if reason == events.ConnectFailureMainDeviceGone {
 		errorCode = WAMainDeviceGone
 	}
-	wa.Client.Disconnect()
+	wa.Disconnect()
 	wa.Client = nil
 	wa.JID = types.EmptyJID
 	wa.UserLogin.Metadata.(*waid.UserLoginMetadata).WADeviceID = 0

@@ -9,7 +9,7 @@ import (
 
 	"go.mau.fi/util/exerrors"
 
-	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/connector"
+	"go.mau.fi/mautrix-whatsapp/pkg/connector"
 )
 
 func init() {

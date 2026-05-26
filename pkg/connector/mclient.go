@@ -25,7 +25,7 @@ import (
 	waBinary "go.mau.fi/whatsmeow/binary"
 	"go.mau.fi/whatsmeow/types"
 
-	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/waid"
+	"go.mau.fi/mautrix-whatsapp/pkg/waid"
 )
 
 type NewMCFunc = func(json.RawMessage, mWAClient) mClient
