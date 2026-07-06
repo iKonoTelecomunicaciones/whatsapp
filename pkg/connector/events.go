@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"mime"
 	"slices"
 	"time"
 
@@ -122,6 +123,51 @@ func (evt *WAMessageEvent) AddLogContext(c zerolog.Context) zerolog.Context {
 		c = c.Str("target_message_id", string(targetMsg))
 	}
 	return evt.MessageInfoWrapper.AddLogContext(c).Str("parsed_message_type", evt.parsedMessageType)
+}
+
+func (evt *WAMessageEvent) GetInviteReason() string {
+	msg := evt.Message
+	switch {
+	// Texto plano
+	case msg.GetConversation() != "":
+		return msg.GetConversation()
+	// Texto con preview de enlace, cita, etc.
+	case msg.GetExtendedTextMessage() != nil:
+		return msg.GetExtendedTextMessage().GetText()
+	// Imagen
+	case msg.GetImageMessage() != nil:
+		return mediaFilename(msg.GetImageMessage().GetMimetype(), "image")
+	// Video
+	case msg.GetVideoMessage() != nil:
+		return mediaFilename(msg.GetVideoMessage().GetMimetype(), "video")
+	// Audio / nota de voz
+	case msg.GetAudioMessage() != nil:
+		return mediaFilename(msg.GetAudioMessage().GetMimetype(), "audio")
+	// Documento (sí suele tener nombre de archivo)
+	case msg.GetDocumentMessage() != nil:
+		doc := msg.GetDocumentMessage()
+		if name := doc.GetFileName(); name != "" {
+			return name
+		}
+		return mediaFilename(doc.GetMimetype(), "file")
+		// Sticker, ubicación, contacto, etc.
+	default:
+		return "Unknown message type"
+	}
+}
+
+func mediaFilename(mimetype, fallback string) string {
+	extensions, err := mime.ExtensionsByType(mimetype) // ej. "image/jpeg" -> ".jpg"
+
+	if err != nil {
+		fmt.Println("Error:", err)
+		return "Unknown file type"
+	}
+
+	if len(extensions) == 0 {
+		return "Unknown file type"
+	}
+	return fallback + extensions[0] // ej. "image.jpg", "audio.ogg"
 }
 
 func (evt *WAMessageEvent) PreHandle(ctx context.Context, portal *bridgev2.Portal) {
