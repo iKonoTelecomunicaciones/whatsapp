@@ -7,7 +7,7 @@ toolchain go1.26.3
 tool go.mau.fi/util/cmd/maubuild
 
 require (
-	github.com/iKonoTelecomunicaciones/go v0.28.0
+	github.com/iKonoTelecomunicaciones/go v0.28.1
 	github.com/lib/pq v1.12.3
 	github.com/rs/zerolog v1.35.1
 	github.com/tidwall/gjson v1.19.0
