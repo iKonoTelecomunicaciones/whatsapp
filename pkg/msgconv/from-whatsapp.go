@@ -135,6 +135,7 @@ func (mc *MessageConverter) ToMatrix(
 	waMsg *waE2E.Message,
 	rawWaMsg *waE2E.Message,
 	info *types.MessageInfo,
+	origSource *types.MessageSource,
 	isViewOnce bool,
 	isBackfill bool,
 	previouslyConvertedPart *bridgev2.ConvertedMessagePart,
@@ -178,6 +179,12 @@ func (mc *MessageConverter) ToMatrix(
 		part, contextInfo = mc.convertPollCreationMessage(ctx, waMsg.PollCreationMessageV2)
 	case waMsg.PollCreationMessageV3 != nil:
 		part, contextInfo = mc.convertPollCreationMessage(ctx, waMsg.PollCreationMessageV3)
+	//case waMsg.PollCreationMessageV4 != nil:
+	//	part, contextInfo = mc.convertPollCreationMessage(ctx, waMsg.PollCreationMessageV4)
+	case waMsg.PollCreationMessageV5 != nil:
+		part, contextInfo = mc.convertPollCreationMessage(ctx, waMsg.PollCreationMessageV5)
+	case waMsg.PollCreationMessageV6 != nil:
+		part, contextInfo = mc.convertPollCreationMessage(ctx, waMsg.PollCreationMessageV6)
 	case waMsg.PollUpdateMessage != nil:
 		part, contextInfo = mc.convertPollUpdateMessage(ctx, info, waMsg.PollUpdateMessage)
 	case waMsg.EventMessage != nil:
@@ -218,6 +225,8 @@ func (mc *MessageConverter) ToMatrix(
 		part, contextInfo = mc.convertPlaceholderMessage(ctx, waMsg)
 	case waMsg.GroupInviteMessage != nil:
 		part, contextInfo = mc.convertGroupInviteMessage(ctx, info, waMsg.GroupInviteMessage)
+	case waMsg.MessageHistoryNotice != nil:
+		part, contextInfo = mc.convertMessageHistoryNotice(ctx, info, waMsg.MessageHistoryNotice)
 	case waMsg.ProtocolMessage != nil && waMsg.ProtocolMessage.GetType() == waE2E.ProtocolMessage_EPHEMERAL_SETTING:
 		return nil
 	case waMsg.EncCommentMessage != nil:

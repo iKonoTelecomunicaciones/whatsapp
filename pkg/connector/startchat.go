@@ -32,6 +32,7 @@ import (
 	"github.com/iKonoTelecomunicaciones/go/id"
 
 	"github.com/rs/zerolog"
+	"go.mau.fi/util/exsync"
 	"go.mau.fi/util/ptr"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types"
@@ -63,6 +64,13 @@ func looksEmaily(str string) bool {
 	return false
 }
 
+type cacheEntry struct {
+	jid types.JID
+	ts  time.Time
+}
+
+var isOnWhatsappCache = exsync.NewMap[string, cacheEntry]()
+
 func (wa *WhatsAppClient) validateIdentifer(ctx context.Context, number string) (types.JID, error) {
 	if strings.HasSuffix(number, "@"+types.BotServer) || strings.HasSuffix(number, "@"+types.HiddenUserServer) {
 		return types.ParseJID(number)
@@ -77,6 +85,8 @@ func (wa *WhatsAppClient) validateIdentifer(ctx context.Context, number string) 
 		return types.EmptyJID, ErrInputLooksLikeEmail
 	} else if wa.Client == nil || !wa.Client.IsLoggedIn() {
 		return types.EmptyJID, bridgev2.ErrNotLoggedIn
+	} else if entry, ok := isOnWhatsappCache.Get(number); ok && time.Since(entry.ts) < 4*time.Hour {
+		return entry.jid, nil
 	} else if resp, err := wa.Client.IsOnWhatsApp(ctx, []string{number}); err != nil {
 		return types.EmptyJID, fmt.Errorf("failed to check if number is on WhatsApp: %w", err)
 	} else if len(resp) == 0 {
@@ -84,6 +94,7 @@ func (wa *WhatsAppClient) validateIdentifer(ctx context.Context, number string) 
 	} else if !resp[0].IsIn {
 		return types.EmptyJID, bridgev2.WrapRespErr(fmt.Errorf("the server said +%s is not on WhatsApp", resp[0].JID.User), mautrix.MNotFound)
 	} else {
+		isOnWhatsappCache.Set(number, cacheEntry{resp[0].JID, time.Now()})
 		return resp[0].JID, nil
 	}
 }

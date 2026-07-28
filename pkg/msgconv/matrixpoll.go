@@ -115,7 +115,7 @@ func (mc *MessageConverter) PollVoteToWhatsApp(
 		zerolog.Ctx(ctx).Err(err).Msg("Failed to parse message ID")
 		return nil, fmt.Errorf("failed to parse message ID")
 	}
-	pollMsgInfo := MessageIDToInfo(client, parsedMsgID)
+	pollMsgInfo := MessageIDToInfo(ctx, client, parsedMsgID)
 	pollMsgInfo.Type = "poll"
 	optionHashes := make([][]byte, 0, len(content.Response.Answers))
 	if pollMsg.Metadata.(*waid.MessageMetadata).IsMatrixPoll {
@@ -146,13 +146,23 @@ func (mc *MessageConverter) PollVoteToWhatsApp(
 	return &waE2E.Message{PollUpdateMessage: pollUpdate}, err
 }
 
-func MessageIDToInfo(client *whatsmeow.Client, parsedMsgID *waid.ParsedMessageID) *types.MessageInfo {
+func MessageIDToInfo(ctx context.Context, client *whatsmeow.Client, parsedMsgID *waid.ParsedMessageID) *types.MessageInfo {
+	chat := parsedMsgID.Chat
+	sender := parsedMsgID.Sender
+	if chat.Server == types.DefaultUserServer {
+		chatLID, _ := client.Store.LIDs.GetLIDForPN(ctx, chat)
+		senderLID, _ := client.Store.LIDs.GetLIDForPN(ctx, sender)
+		if !chatLID.IsEmpty() && !senderLID.IsEmpty() {
+			chat = chatLID
+			sender = senderLID
+		}
+	}
 	return &types.MessageInfo{
 		MessageSource: types.MessageSource{
-			Chat:     parsedMsgID.Chat,
-			Sender:   parsedMsgID.Sender,
-			IsFromMe: parsedMsgID.Sender.User == client.Store.GetLID().User || parsedMsgID.Sender.User == client.Store.GetJID().User,
-			IsGroup:  parsedMsgID.Chat.Server == types.GroupServer,
+			Chat:     chat,
+			Sender:   sender,
+			IsFromMe: sender.User == client.Store.GetLID().User || sender.User == client.Store.GetJID().User,
+			IsGroup:  chat.Server == types.GroupServer,
 		},
 		ID: parsedMsgID.ID,
 	}

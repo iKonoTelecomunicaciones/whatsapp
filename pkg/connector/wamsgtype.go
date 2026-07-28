@@ -69,10 +69,11 @@ func getMessageType(waMsg *waE2E.Message) string {
 		return "encrypted comment"
 	case waMsg.CommentMessage != nil:
 		return "comment"
-	case waMsg.PollCreationMessage != nil || waMsg.PollCreationMessageV2 != nil || waMsg.PollCreationMessageV3 != nil:
+	case waMsg.PollCreationMessage != nil || waMsg.PollCreationMessageV2 != nil || waMsg.PollCreationMessageV3 != nil ||
+		waMsg.PollCreationMessageV5 != nil || waMsg.PollCreationMessageV6 != nil:
 		return "poll create"
-	case waMsg.PollCreationMessageV4 != nil || waMsg.PollCreationMessageV5 != nil:
-		return "poll create (vNext)"
+	case waMsg.PollCreationMessageV4 != nil:
+		return "poll create (v4)"
 	case waMsg.PollUpdateMessage != nil:
 		return "poll update"
 	case waMsg.ProtocolMessage != nil:
@@ -132,8 +133,8 @@ func getMessageType(waMsg *waE2E.Message) string {
 		return "secret encrypted"
 	case waMsg.PollResultSnapshotMessage != nil:
 		return "poll result snapshot"
-	case waMsg.MessageHistoryBundle != nil:
-		return "message history bundle"
+	case waMsg.MessageHistoryNotice != nil:
+		return "message history notice"
 	case waMsg.RequestPhoneNumberMessage != nil:
 		return "request phone number"
 	case waMsg.KeepInChatMessage != nil:
@@ -154,7 +155,7 @@ func getMessageType(waMsg *waE2E.Message) string {
 		return "chat"
 	case waMsg.PlaceholderMessage != nil:
 		return "placeholder"
-	case waMsg.SenderKeyDistributionMessage != nil, waMsg.StickerSyncRmrMessage != nil:
+	case waMsg.SenderKeyDistributionMessage != nil, waMsg.StickerSyncRmrMessage != nil, waMsg.MessageHistoryBundle != nil:
 		return "ignore"
 	default:
 		return "unknown"

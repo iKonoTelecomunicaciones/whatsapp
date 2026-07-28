@@ -99,20 +99,19 @@ func (mc *MessageConverter) convertExtendedMessage(
 		return
 	}
 
-	quotedMessage := messageContextInfo.GetQuotedMessage()
+	// Status replies are the only case where we embed the quoted message as an extra
+	// part: the quoted status isn't a message that exists in the current chat's timeline
+	// (it lives in the status broadcast "chat"), so there's nothing for the normal
+	// DB-backed ReplyTo lookup to find. Quotes of regular messages in the same chat are
+	// handled by ReplyTo below instead, since Element already renders those natively.
+	if !isStatusBroadcastQuote(messageContextInfo) {
+		return
+	}
 
-	if quotedMessage != nil && quotedMessage.GetExtendedTextMessage() != nil {
+	status_part = mc.convertExtendedStatusMessage(ctx, info, messageContextInfo.GetQuotedMessage())
+	if status_part != nil {
 		part.Content.MsgType = event.MsgNotice
-		status_part = mc.convertExtendedStatusMessage(ctx, info, quotedMessage)
-		return
 	}
-
-	if quotedMessage == nil || (quotedMessage.GetVideoMessage() == nil && quotedMessage.GetImageMessage() == nil && quotedMessage.GetAudioMessage() == nil) {
-		return
-	}
-
-	part.Content.MsgType = event.MsgNotice
-	status_part = mc.convertExtendedStatusMessage(ctx, info, quotedMessage)
 	return
 }
 

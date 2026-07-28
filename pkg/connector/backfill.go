@@ -260,6 +260,9 @@ func (wa *WhatsAppClient) handleWAHistorySync(
 					Str("msg_id", rawMsg.GetMessage().GetKey().GetID()).
 					Uint64("msg_time_seconds", rawMsg.GetMessage().GetMessageTimestamp()).
 					Msg("Dropping historical message due to parse error")
+				log.Trace().
+					Any("web_message_info", rawMsg.GetMessage()).
+					Msg("Content of event that failed to parse")
 				continue
 			}
 			if firstItemTime.IsZero() {
@@ -397,8 +400,8 @@ func (wa *WhatsAppClient) createPortalsFromHistorySync(ctx context.Context) {
 			return
 		}
 		wrappedInfo, err := wa.getChatInfo(ctx, conv.ChatJID, conv, true)
-		if errors.Is(err, whatsmeow.ErrNotInGroup) {
-			log.Debug().Stringer("chat_jid", conv.ChatJID).
+		if errors.Is(err, whatsmeow.ErrNotInGroup) || errors.Is(err, whatsmeow.ErrGroupNotFound) {
+			log.Debug().Err(err).Stringer("chat_jid", conv.ChatJID).
 				Msg("Skipping creating room because the user is not a participant")
 			//err = wa.Main.DB.Message.DeleteAllInChat(ctx, wa.UserLogin.ID, conv.ChatJID)
 			//if err != nil {
@@ -603,6 +606,9 @@ func (wa *WhatsAppClient) convertHistorySyncMessages(
 				Str("msg_id", msg.GetKey().GetID()).
 				Uint64("msg_time_seconds", msg.GetMessageTimestamp()).
 				Msg("Dropping historical message due to parse error")
+			zerolog.Ctx(ctx).Trace().
+				Any("web_message_info", msg.GetMessage()).
+				Msg("Content of event that failed to parse")
 			continue
 		}
 		if !explodeOnError {
@@ -744,7 +750,7 @@ func (wa *WhatsAppClient) convertHistorySyncMessage(
 	// TODO use proper intent
 	intent := wa.Main.Bridge.Bot
 	wrapped := &bridgev2.BackfillMessage{
-		ConvertedMessage: wa.Main.MsgConv.ToMatrix(ctx, portal, wa.Client, intent, msg, rawMsg, info, isViewOnce, true, nil),
+		ConvertedMessage: wa.Main.MsgConv.ToMatrix(ctx, portal, wa.Client, intent, msg, rawMsg, info, nil, isViewOnce, true, nil),
 		Sender:           wa.makeEventSender(ctx, info.Sender),
 		ID:               waid.MakeMessageID(info.Chat, info.Sender, info.ID),
 		TxnID:            networkid.TransactionID(waid.MakeMessageID(info.Chat, info.Sender, info.ID)),

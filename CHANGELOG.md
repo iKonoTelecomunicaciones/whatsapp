@@ -1,3 +1,18 @@
+# v26.07
+
+* Updated Docker image to Alpine 3.24.
+* Added support for the extra passkey authentication step when logging in.
+* Added support for newer versions of poll messages from WhatsApp.
+* Fixed poll votes in DMs.
+
+# v26.06
+
+* Added placeholder for group message history share notices.
+* Fixed community spaces not being bridged properly in some cases.
+* Fixed handling edits of HD media.
+* Fixed duplicate message when a message from another own device is initially
+  undecryptable and later gets resolved.
+
 # v26.05
 
 * Added support for importing sticker packs from WhatsApp.

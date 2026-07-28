@@ -31,6 +31,7 @@ import (
 	"github.com/iKonoTelecomunicaciones/go/event"
 	"github.com/iKonoTelecomunicaciones/go/id"
 	"github.com/rs/zerolog"
+	"go.mau.fi/util/exfmt"
 	"go.mau.fi/util/exmime"
 	"go.mau.fi/util/exslices"
 	"go.mau.fi/whatsmeow"
@@ -71,11 +72,16 @@ func (mc *MessageConverter) convertMediaMessage(
 		mc.parseFormatting(preparedMedia.MessageEventContent, false, false)
 	}
 	contextInfo = preparedMedia.ContextInfo
+	// See the comment in convertExtendedMessage: only quoted status broadcasts need to be
+	// embedded as an extra part, since they aren't reachable via the normal ReplyTo lookup.
+	if isStatusBroadcastQuote(contextInfo) {
+		status_part = mc.convertExtendedStatusMessage(ctx, messageInfo, contextInfo.GetQuotedMessage())
+	}
 	if cachedPart != nil && msg.GetDirectPath() == "" {
 		cachedPart.Content.Body = preparedMedia.Body
 		cachedPart.Content.Format = preparedMedia.Format
 		cachedPart.Content.FormattedBody = preparedMedia.FormattedBody
-		return cachedPart, nil, contextInfo
+		return cachedPart, status_part, contextInfo
 	}
 	mediaKeys := &FailedMediaKeys{
 		Key:       msg.GetMediaKey(),
@@ -94,7 +100,7 @@ func (mc *MessageConverter) convertMediaMessage(
 		var err error
 		portal := getPortal(ctx)
 		idOverride := getEditTargetID(ctx)
-		preparedMedia.URL, err = portal.Bridge.Matrix.GenerateContentURI(ctx, waid.MakeMediaID(messageInfo, idOverride, portal.Receiver))
+		preparedMedia.URL, err = portal.Bridge.Matrix.GenerateContentURI(ctx, waid.MakeMediaID(messageInfo, idOverride, portal.Receiver, msg.GetFileSHA256()))
 		if err != nil {
 			panic(fmt.Errorf("failed to generate content URI: %w", err))
 		}
@@ -119,12 +125,16 @@ func (mc *MessageConverter) convertMediaMessage(
 			Content: preparedMedia.MessageEventContent,
 			Extra:   preparedMedia.Extra,
 		}
-
-		if msg.GetContextInfo() != nil && msg.GetContextInfo().QuotedMessage != nil {
-			status_part = mc.convertExtendedStatusMessage(ctx, messageInfo, msg.GetContextInfo().QuotedMessage)
-		}
 	}
 	return
+}
+
+// isStatusBroadcastQuote reports whether contextInfo quotes a message from the WhatsApp
+// Status broadcast "chat". Such quotes need to be embedded as an extra converted part
+// because the quoted message never appears in the current chat's timeline, so the normal
+// DB-backed ReplyTo lookup (keyed by chat+sender+stanza ID) can never find it.
+func isStatusBroadcastQuote(contextInfo *waE2E.ContextInfo) bool {
+	return contextInfo.GetQuotedMessage() != nil && contextInfo.GetRemoteJID() == types.StatusBroadcastJID.String()
 }
 
 func (mc *MessageConverter) convertExtendedStatusMessage(
@@ -161,55 +171,70 @@ func (mc *MessageConverter) convertExtendedStatusMessage(
 	return status_part
 }
 
+// quotedMediaClassification is the pure (network-free) part of getMediaTypeData: it
+// decides what kind of Matrix part a quoted WhatsApp message should become, without
+// downloading or reuploading any media.
+type quotedMediaClassification struct {
+	mediaMessage MediaMessage
+	msgType      event.MessageType
+	fileName     string
+	textBody     string
+}
+
+func classifyQuotedMessage(quotedMessage *waE2E.Message) *quotedMediaClassification {
+	switch {
+	case quotedMessage.GetImageMessage() != nil:
+		return &quotedMediaClassification{
+			mediaMessage: quotedMessage.GetImageMessage(),
+			msgType:      event.MsgImage,
+			fileName:     "image" + exmime.ExtensionFromMimetype(quotedMessage.GetImageMessage().GetMimetype()),
+		}
+	case quotedMessage.GetVideoMessage() != nil:
+		return &quotedMediaClassification{
+			mediaMessage: quotedMessage.GetVideoMessage(),
+			msgType:      event.MsgVideo,
+			fileName:     "video" + exmime.ExtensionFromMimetype(quotedMessage.GetVideoMessage().GetMimetype()),
+		}
+	case quotedMessage.GetAudioMessage() != nil:
+		return &quotedMediaClassification{
+			mediaMessage: quotedMessage.GetAudioMessage(),
+			msgType:      event.MsgAudio,
+			fileName:     "audio" + exmime.ExtensionFromMimetype(quotedMessage.GetAudioMessage().GetMimetype()),
+		}
+	case quotedMessage.GetExtendedTextMessage() != nil:
+		return &quotedMediaClassification{
+			msgType:  event.MsgText,
+			textBody: quotedMessage.GetExtendedTextMessage().GetText(),
+		}
+	default:
+		return nil
+	}
+}
+
 func (mc *MessageConverter) getMediaTypeData(
 	ctx context.Context,
 	quotedMessage *waE2E.Message,
 ) *PreparedMedia {
-	var preparedMedia *PreparedMedia
-	var mediaMessage MediaMessage
-	var textMessage string
-	var msgType event.MessageType
-	var fileName string
-
-	switch {
-	case quotedMessage.GetImageMessage() != nil:
-		mediaMessage = quotedMessage.GetImageMessage()
-		msgType = event.MsgImage
-		fileName = "image" + exmime.ExtensionFromMimetype(quotedMessage.GetImageMessage().GetMimetype())
-
-	case quotedMessage.GetVideoMessage() != nil:
-		mediaMessage = quotedMessage.GetVideoMessage()
-		msgType = event.MsgVideo
-		fileName = "video" + exmime.ExtensionFromMimetype(quotedMessage.GetVideoMessage().GetMimetype())
-
-	case quotedMessage.GetAudioMessage() != nil:
-		mediaMessage = quotedMessage.GetAudioMessage()
-		msgType = event.MsgAudio
-		fileName = "audio" + exmime.ExtensionFromMimetype(quotedMessage.GetAudioMessage().GetMimetype())
-
-	case quotedMessage.GetExtendedTextMessage() != nil:
-		textMessage = quotedMessage.GetExtendedTextMessage().GetText()
-		msgType = event.MsgText
-
-	default:
+	classification := classifyQuotedMessage(quotedMessage)
+	if classification == nil {
 		return nil
 	}
 
-	if msgType == event.MsgText {
+	if classification.msgType == event.MsgText {
 		return &PreparedMedia{
 			Type: event.EventMessage,
 			MessageEventContent: &event.MessageEventContent{
-				MsgType: msgType,
-				Body:    textMessage,
+				MsgType: classification.msgType,
+				Body:    classification.textBody,
 			},
 		}
 	}
 
-	preparedMedia = prepareMediaMessage(mediaMessage)
-	preparedMedia.FileName = fileName
-	preparedMedia.MsgType = msgType
+	preparedMedia := prepareMediaMessage(classification.mediaMessage)
+	preparedMedia.FileName = classification.fileName
+	preparedMedia.MsgType = classification.msgType
 
-	if err := mc.reuploadWhatsAppAttachment(ctx, mediaMessage, preparedMedia); err != nil {
+	if err := mc.reuploadWhatsAppAttachment(ctx, classification.mediaMessage, preparedMedia); err != nil {
 		panic(fmt.Errorf("failed to generate content URI: %w", err))
 	}
 
@@ -219,10 +244,10 @@ func (mc *MessageConverter) getMediaTypeData(
 func (mc *MessageConverter) convertAlbumMessage(ctx context.Context, msg *waE2E.AlbumMessage) (*bridgev2.ConvertedMessagePart, *waE2E.ContextInfo) {
 	parts := make([]string, 0, 2)
 	if msg.GetExpectedImageCount() > 0 {
-		parts = append(parts, fmt.Sprintf("%d images", msg.GetExpectedImageCount()))
+		parts = append(parts, exfmt.Pluralizable("image")(int(msg.GetExpectedImageCount())))
 	}
 	if msg.GetExpectedVideoCount() > 0 {
-		parts = append(parts, fmt.Sprintf("%d videos", msg.GetExpectedVideoCount()))
+		parts = append(parts, exfmt.Pluralizable("video")(int(msg.GetExpectedVideoCount())))
 	}
 	var partDesc string
 	if len(parts) > 0 {
@@ -464,7 +489,7 @@ func (mc *MessageConverter) reuploadWhatsAppAttachment(
 		var err error
 		part.URL, part.File, err = intent.UploadMediaStream(ctx, roomID, -1, true, func(file io.Writer) (*bridgev2.FileStreamResult, error) {
 			err := client.DownloadToFile(ctx, message, file.(*os.File))
-			if errors.Is(err, whatsmeow.ErrFileLengthMismatch) || errors.Is(err, whatsmeow.ErrInvalidMediaSHA256) {
+			if errors.Is(err, whatsmeow.ErrInvalidMediaSHA256) {
 				zerolog.Ctx(ctx).Warn().Err(err).Msg("Mismatching media checksums in message. Ignoring because WhatsApp seems to ignore them too")
 			} else if err != nil {
 				return nil, fmt.Errorf("%w: %w", bridgev2.ErrMediaDownloadFailed, err)
@@ -485,7 +510,7 @@ func (mc *MessageConverter) reuploadWhatsAppAttachment(
 		}
 	} else {
 		data, err := client.Download(ctx, message)
-		if errors.Is(err, whatsmeow.ErrFileLengthMismatch) || errors.Is(err, whatsmeow.ErrInvalidMediaSHA256) {
+		if errors.Is(err, whatsmeow.ErrInvalidMediaSHA256) {
 			zerolog.Ctx(ctx).Warn().Err(err).Msg("Mismatching media checksums in message. Ignoring because WhatsApp seems to ignore them too")
 		} else if err != nil {
 			return fmt.Errorf("%w: %w", bridgev2.ErrMediaDownloadFailed, err)
