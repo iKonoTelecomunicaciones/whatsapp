@@ -33,7 +33,6 @@ import (
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/appstate"
 	"go.mau.fi/whatsmeow/proto/waE2E"
-	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 
@@ -77,6 +76,7 @@ func init() {
 func (wa *WhatsAppClient) handleWAEvent(rawEvt any) (success bool) {
 	log := wa.UserLogin.Log
 	ctx := log.WithContext(wa.Main.Bridge.BackgroundCtx)
+	wa.MC.OnWhatsAppEvent(rawEvt)
 
 	success = true
 	switch evt := rawEvt.(type) {
@@ -126,6 +126,20 @@ func (wa *WhatsAppClient) handleWAEvent(rawEvt any) (success bool) {
 		success = wa.handleWANewsletterLeave(evt)
 	case *events.Picture:
 		success = wa.handleWAPictureUpdate(ctx, evt)
+	case *events.NotifyAccountReachoutTimelock:
+		wa.UserLogin.TrackAnalytics("WhatsApp Account Reachout Timelock", map[string]any{
+			"enforcement_type":      evt.EnforcementType,
+			"is_active":             evt.IsActive,
+			"time_enforcement_ends": evt.TimeEnforcementEnds.Time,
+		})
+		wa.UserLogin.Metadata.(*waid.UserLoginMetadata).ReachoutTimelockUntil = evt.TimeEnforcementEnds.Time
+		if wa.UserLogin.BridgeState.GetPrevUnsent().StateEvent == status.StateConnected {
+			wa.UserLogin.BridgeState.Send(status.BridgeState{StateEvent: status.StateConnected})
+		}
+		err := wa.UserLogin.Save(ctx)
+		if err != nil {
+			log.Err(err).Msg("Failed to save user login metadata after reachout timelock update")
+		}
 
 	case *events.AppStateSyncComplete:
 		wa.handleWAAppStateSyncComplete(ctx, evt)
@@ -168,7 +182,6 @@ func (wa *WhatsAppClient) handleWAEvent(rawEvt any) (success bool) {
 			}()
 			go wa.syncRemoteProfile(ctx, nil)
 		}
-		wa.MC.OnConnect(store.GetWAVersion()[2], wa.Device.Platform)
 	case *events.OfflineSyncPreview:
 		log.Info().
 			Int("message_count", evt.Messages).
@@ -345,6 +358,7 @@ func (wa *WhatsAppClient) handleWAMessage(ctx context.Context, evt *events.Messa
 		evt.UnwrapRaw()
 		parsedMessageType = getMessageType(evt.Message)
 	}
+	origSource := evt.Info.MessageSource
 	wa.rerouteWAMessage(ctx, "message", &evt.Info.MessageSource, evt.Info.ID)
 	wa.UserLogin.Log.Trace().
 		Any("info", evt.Info).
@@ -359,24 +373,32 @@ func (wa *WhatsAppClient) handleWAMessage(ctx context.Context, evt *events.Messa
 		return
 	}
 
+	dontRenderEdited := false
 	messageAssoc := evt.Message.GetMessageContextInfo().GetMessageAssociation()
 	if assocType := messageAssoc.GetAssociationType(); assocType == waE2E.MessageAssociation_HD_IMAGE_DUAL_UPLOAD || assocType == waE2E.MessageAssociation_HD_VIDEO_DUAL_UPLOAD {
 		parentKey := messageAssoc.GetParentMessageKey()
-		associatedMessage := evt.Message.GetAssociatedChildMessage().GetMessage()
+		protocolMsg := evt.Message.GetProtocolMessage()
+		if protocolMsg.GetType() != waE2E.ProtocolMessage_MESSAGE_EDIT || protocolMsg.GetKey() == nil {
+			protocolMsg = &waE2E.ProtocolMessage{
+				Type:          waE2E.ProtocolMessage_MESSAGE_EDIT.Enum(),
+				Key:           parentKey,
+				EditedMessage: evt.Message.GetAssociatedChildMessage().GetMessage(),
+			}
+			dontRenderEdited = true
+		} else if child := protocolMsg.GetEditedMessage().GetAssociatedChildMessage().GetMessage(); child != nil {
+			protocolMsg.EditedMessage = child
+			protocolMsg.Key = parentKey
+		}
 		wa.UserLogin.Log.Debug().
 			Str("message_id", evt.Info.ID).
 			Str("parent_id", parentKey.GetID()).
 			Stringer("assoc_type", assocType).
 			Msg("Received HD replacement message, converting to edit")
 
-		protocolMsg := &waE2E.ProtocolMessage{
-			Type:          waE2E.ProtocolMessage_MESSAGE_EDIT.Enum(),
-			Key:           parentKey,
-			EditedMessage: associatedMessage,
-		}
 		evt.Message = &waE2E.Message{
 			ProtocolMessage: protocolMsg,
 		}
+		parsedMessageType = getMessageType(evt.Message)
 	} else if assocType == waE2E.MessageAssociation_MOTION_PHOTO {
 		//evt.Message = evt.Message.GetAssociatedChildMessage().GetMessage()
 		wa.UserLogin.Log.Debug().
@@ -388,13 +410,15 @@ func (wa *WhatsAppClient) handleWAMessage(ctx context.Context, evt *events.Messa
 
 	res := wa.UserLogin.QueueRemoteEvent(&WAMessageEvent{
 		MessageInfoWrapper: &MessageInfoWrapper{
-			Info: evt.Info,
-			wa:   wa,
+			OrigSource: origSource,
+			Info:       evt.Info,
+			wa:         wa,
 		},
 		Message:  evt.Message,
 		MsgEvent: evt,
 
 		parsedMessageType: parsedMessageType,
+		dontRenderEdited:  dontRenderEdited,
 	})
 	return res.Success
 }

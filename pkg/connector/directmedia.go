@@ -17,6 +17,7 @@
 package connector
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -130,9 +131,7 @@ func (wa *WhatsAppConnector) downloadAvatarDirectMedia(ctx context.Context, pars
 	}
 	return &mediaproxy.GetMediaResponseFile{
 		Callback: func(w *os.File) (*mediaproxy.FileMeta, error) {
-			return &mediaproxy.FileMeta{}, waClient.Client.DownloadMediaWithPathToFile(
-				ctx, cachedInfo.DirectPath, nil, nil, nil, 0, "", "", w,
-			)
+			return &mediaproxy.FileMeta{}, waClient.Client.DownloadMediaWithOnlyPathToFile(ctx, cachedInfo.DirectPath, w)
 		},
 	}, nil
 }
@@ -170,6 +169,9 @@ func (wa *WhatsAppConnector) downloadMessageDirectMedia(ctx context.Context, par
 	err = json.Unmarshal(dmm, &keys)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal media keys: %w", err)
+	}
+	if version := parsedID.Message.Version; len(version) > 0 && !bytes.Equal(version, keys.EncSHA256) && !bytes.Equal(version, keys.SHA256) {
+		return nil, mautrix.MNotFound.WithMessage("Version mismatch, media was likely replaced")
 	}
 	var ul *bridgev2.UserLogin
 	if parsedID.UserLogin != "" {
@@ -223,7 +225,7 @@ func (wa *WhatsAppConnector) makeDirectMediaResponse(
 				log.Trace().Msg("Retrying download after successful retry")
 				err = waClient.Client.DownloadToFile(ctx, keys, f)
 			}
-			if errors.Is(err, whatsmeow.ErrFileLengthMismatch) || errors.Is(err, whatsmeow.ErrInvalidMediaSHA256) {
+			if errors.Is(err, whatsmeow.ErrInvalidMediaSHA256) {
 				zerolog.Ctx(ctx).Warn().Err(err).Msg("Mismatching media checksums in message. Ignoring because WhatsApp seems to ignore them too")
 			} else if err != nil {
 				return nil, err
