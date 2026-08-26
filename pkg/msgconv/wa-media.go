@@ -100,7 +100,7 @@ func (mc *MessageConverter) convertMediaMessage(
 		var err error
 		portal := getPortal(ctx)
 		idOverride := getEditTargetID(ctx)
-		preparedMedia.URL, err = portal.Bridge.Matrix.GenerateContentURI(ctx, waid.MakeMediaID(messageInfo, idOverride, portal.Receiver, msg.GetFileSHA256()))
+		preparedMedia.URL, err = portal.Bridge.Matrix.GenerateContentURI(ctx, waid.MakeMediaID(messageInfo, idOverride, portal.Receiver, getMediaIDVersion(msg)))
 		if err != nil {
 			panic(fmt.Errorf("failed to generate content URI: %w", err))
 		}
@@ -127,6 +127,13 @@ func (mc *MessageConverter) convertMediaMessage(
 		}
 	}
 	return
+}
+
+func getMediaIDVersion(msg MediaMessage) []byte {
+	if encSHA256 := msg.GetFileEncSHA256(); len(encSHA256) > 0 {
+		return encSHA256
+	}
+	return msg.GetFileSHA256()
 }
 
 // isStatusBroadcastQuote reports whether contextInfo quotes a message from the WhatsApp

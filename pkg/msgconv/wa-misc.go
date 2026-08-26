@@ -117,6 +117,7 @@ func (mc *MessageConverter) convertGroupInviteMessage(ctx context.Context, info 
 		},
 	}, msg.GetContextInfo()
 }
+
 func (mc *MessageConverter) formatMessageHistoryNoticeJID(ctx context.Context, jid types.JID) string {
 	_, displayName, err := mc.getBasicUserInfo(ctx, jid)
 	if err != nil {
@@ -172,6 +173,7 @@ func (mc *MessageConverter) messageHistoryNoticeLocation(ctx context.Context) *t
 	}
 	return time.Local
 }
+
 func (mc *MessageConverter) convertMessageHistoryNotice(ctx context.Context, info *types.MessageInfo, msg *waE2E.MessageHistoryNotice) (*bridgev2.ConvertedMessagePart, *waE2E.ContextInfo) {
 	metadata := msg.GetMessageHistoryMetadata()
 
