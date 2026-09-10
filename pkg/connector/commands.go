@@ -27,11 +27,11 @@ import (
 	"github.com/iKonoTelecomunicaciones/go/bridgev2"
 	"github.com/iKonoTelecomunicaciones/go/bridgev2/commands"
 	"github.com/iKonoTelecomunicaciones/go/bridgev2/simplevent"
+	"github.com/iKonoTelecomunicaciones/whatsmeow"
+	"github.com/iKonoTelecomunicaciones/whatsmeow/appstate"
+	"github.com/iKonoTelecomunicaciones/whatsmeow/types"
 	"github.com/rs/zerolog"
 	"go.mau.fi/util/exslices"
-	"go.mau.fi/whatsmeow"
-	"go.mau.fi/whatsmeow/appstate"
-	"go.mau.fi/whatsmeow/types"
 
 	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/waid"
 )

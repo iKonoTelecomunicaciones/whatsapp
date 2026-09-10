@@ -21,10 +21,10 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/iKonoTelecomunicaciones/whatsmeow"
+	waBinary "github.com/iKonoTelecomunicaciones/whatsmeow/binary"
+	"github.com/iKonoTelecomunicaciones/whatsmeow/types"
 	"go.mau.fi/util/ptr"
-	"go.mau.fi/whatsmeow"
-	waBinary "go.mau.fi/whatsmeow/binary"
-	"go.mau.fi/whatsmeow/types"
 
 	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/waid"
 )

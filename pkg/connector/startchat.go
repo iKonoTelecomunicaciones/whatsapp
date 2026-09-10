@@ -31,12 +31,12 @@ import (
 	"github.com/iKonoTelecomunicaciones/go/event"
 	"github.com/iKonoTelecomunicaciones/go/id"
 
+	"github.com/iKonoTelecomunicaciones/whatsmeow"
+	"github.com/iKonoTelecomunicaciones/whatsmeow/types"
 	"github.com/rs/zerolog"
 	"go.mau.fi/util/exmaps"
 	"go.mau.fi/util/exsync"
 	"go.mau.fi/util/ptr"
-	"go.mau.fi/whatsmeow"
-	"go.mau.fi/whatsmeow/types"
 
 	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/msgconv"
 	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/waid"

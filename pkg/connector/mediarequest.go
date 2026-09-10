@@ -23,8 +23,8 @@ import (
 
 	"github.com/iKonoTelecomunicaciones/go/bridgev2"
 	"github.com/iKonoTelecomunicaciones/go/bridgev2/networkid"
+	"github.com/iKonoTelecomunicaciones/whatsmeow/types"
 	"github.com/rs/zerolog"
-	"go.mau.fi/whatsmeow/types"
 
 	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/connector/wadb"
 	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/msgconv"

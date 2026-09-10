@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/iKonoTelecomunicaciones/go/event"
+	"github.com/iKonoTelecomunicaciones/whatsmeow/types"
 	up "go.mau.fi/util/configupgrade"
-	"go.mau.fi/whatsmeow/types"
 	"gopkg.in/yaml.v3"
 
 	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/msgconv"

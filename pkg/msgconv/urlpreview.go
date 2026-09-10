@@ -28,9 +28,9 @@ import (
 
 	"github.com/iKonoTelecomunicaciones/go/bridgev2"
 	"github.com/iKonoTelecomunicaciones/go/event"
+	"github.com/iKonoTelecomunicaciones/whatsmeow"
+	"github.com/iKonoTelecomunicaciones/whatsmeow/proto/waE2E"
 	"github.com/rs/zerolog"
-	"go.mau.fi/whatsmeow"
-	"go.mau.fi/whatsmeow/proto/waE2E"
 	"golang.org/x/net/idna"
 	"google.golang.org/protobuf/proto"
 )

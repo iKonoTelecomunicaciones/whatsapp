@@ -21,7 +21,7 @@ import (
 	"strings"
 
 	"github.com/iKonoTelecomunicaciones/go/bridgev2/networkid"
-	"go.mau.fi/whatsmeow/types"
+	"github.com/iKonoTelecomunicaciones/whatsmeow/types"
 )
 
 func MakePortalID(jid types.JID) networkid.PortalID {
