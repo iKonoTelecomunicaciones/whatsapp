@@ -12,13 +12,13 @@ import (
 	"github.com/iKonoTelecomunicaciones/go/bridgev2"
 	"github.com/iKonoTelecomunicaciones/go/bridgev2/database"
 	"github.com/iKonoTelecomunicaciones/go/bridgev2/status"
+	"github.com/iKonoTelecomunicaciones/whatsmeow"
+	"github.com/iKonoTelecomunicaciones/whatsmeow/types"
+	"github.com/iKonoTelecomunicaciones/whatsmeow/types/events"
+	waLog "github.com/iKonoTelecomunicaciones/whatsmeow/util/log"
 	"github.com/rs/zerolog"
 	"go.mau.fi/util/exsync"
 	"go.mau.fi/util/jsontime"
-	"go.mau.fi/whatsmeow"
-	"go.mau.fi/whatsmeow/types"
-	"go.mau.fi/whatsmeow/types/events"
-	waLog "go.mau.fi/whatsmeow/util/log"
 
 	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/waid"
 )

@@ -3,9 +3,9 @@ package wadb
 import (
 	"context"
 
+	"github.com/iKonoTelecomunicaciones/whatsmeow/types"
 	"go.mau.fi/util/dbutil"
 	"go.mau.fi/util/jsontime"
-	"go.mau.fi/whatsmeow/types"
 )
 
 type AvatarCacheQuery struct {

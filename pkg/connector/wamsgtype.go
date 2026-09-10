@@ -19,7 +19,7 @@ package connector
 import (
 	"fmt"
 
-	"go.mau.fi/whatsmeow/proto/waE2E"
+	"github.com/iKonoTelecomunicaciones/whatsmeow/proto/waE2E"
 )
 
 func getMessageType(waMsg *waE2E.Message) string {

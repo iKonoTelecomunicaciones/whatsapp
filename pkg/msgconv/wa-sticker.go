@@ -37,13 +37,13 @@ import (
 	"github.com/iKonoTelecomunicaciones/go/bridgev2/database"
 	"github.com/iKonoTelecomunicaciones/go/bridgev2/networkid"
 	"github.com/iKonoTelecomunicaciones/go/event"
+	"github.com/iKonoTelecomunicaciones/whatsmeow"
+	"github.com/iKonoTelecomunicaciones/whatsmeow/types"
 	"github.com/rs/zerolog"
 	"github.com/tidwall/gjson"
 	"go.mau.fi/util/exstrings"
 	"go.mau.fi/util/lottie"
 	"go.mau.fi/util/random"
-	"go.mau.fi/whatsmeow"
-	"go.mau.fi/whatsmeow/types"
 
 	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/waid"
 )

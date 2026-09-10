@@ -22,9 +22,9 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"go.mau.fi/whatsmeow/proto/waE2E"
-	"go.mau.fi/whatsmeow/types"
-	"go.mau.fi/whatsmeow/types/events"
+	"github.com/iKonoTelecomunicaciones/whatsmeow/proto/waE2E"
+	"github.com/iKonoTelecomunicaciones/whatsmeow/types"
+	"github.com/iKonoTelecomunicaciones/whatsmeow/types/events"
 )
 
 func (wa *WhatsAppClient) obfuscateJID(jid types.JID) string {

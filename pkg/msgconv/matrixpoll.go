@@ -23,12 +23,12 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/iKonoTelecomunicaciones/whatsmeow"
+	"github.com/iKonoTelecomunicaciones/whatsmeow/proto/waE2E"
+	"github.com/iKonoTelecomunicaciones/whatsmeow/types"
 	"github.com/rs/zerolog"
 	"go.mau.fi/util/ptr"
 	"go.mau.fi/util/random"
-	"go.mau.fi/whatsmeow"
-	"go.mau.fi/whatsmeow/proto/waE2E"
-	"go.mau.fi/whatsmeow/types"
 
 	"github.com/iKonoTelecomunicaciones/go/bridgev2"
 	"github.com/iKonoTelecomunicaciones/go/bridgev2/database"
