@@ -31,13 +31,14 @@ import (
 	"github.com/iKonoTelecomunicaciones/go/event"
 	"github.com/iKonoTelecomunicaciones/go/id"
 
+	"github.com/iKonoTelecomunicaciones/whatsmeow"
+	"github.com/iKonoTelecomunicaciones/whatsmeow/types"
 	"github.com/rs/zerolog"
 	"go.mau.fi/util/exmaps"
 	"go.mau.fi/util/exsync"
 	"go.mau.fi/util/ptr"
-	"go.mau.fi/whatsmeow"
-	"go.mau.fi/whatsmeow/types"
 
+	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/connector/wadb"
 	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/msgconv"
 	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/waid"
 )
@@ -82,8 +83,8 @@ func (wa *WhatsAppClient) validateIdentifer(ctx context.Context, number string) 
 		jid, _ := types.ParseJID(number)
 		number = "+" + jid.User
 	}
-	if looksEmaily(number) {
-		return types.EmptyJID, ErrInputLooksLikeEmail
+	if looksLikeWhatsAppUsername(number) {
+		return wa.resolveUsername(ctx, number)
 	} else if wa.Client == nil || !wa.Client.IsLoggedIn() {
 		return types.EmptyJID, bridgev2.ErrNotLoggedIn
 	} else if entry, ok := isOnWhatsappCache.Get(number); ok && time.Since(entry.ts) < 4*time.Hour {
@@ -96,8 +97,59 @@ func (wa *WhatsAppClient) validateIdentifer(ctx context.Context, number string) 
 		return types.EmptyJID, bridgev2.WrapRespErr(fmt.Errorf("the server said +%s is not on WhatsApp", resp[0].JID.User), mautrix.MNotFound)
 	} else {
 		isOnWhatsappCache.Set(number, cacheEntry{resp[0].JID, time.Now()})
+		if resp[0].Username != "" {
+			lid := types.EmptyJID
+			pn := types.EmptyJID
+			if resp[0].JID.Server == types.HiddenUserServer {
+				lid = resp[0].JID
+				pn = resp[0].PhoneNumber
+			} else if !resp[0].JID.IsEmpty() {
+				pn = resp[0].JID
+				lid, _ = wa.GetStore().LIDs.GetLIDForPN(ctx, pn)
+			}
+			if !lid.IsEmpty() {
+				wa.maybeUpdateUsernameMap(ctx, lid, pn, resp[0].Username, "isonwhatsapp query")
+			}
+		}
 		return resp[0].JID, nil
 	}
+}
+
+// GetUsernameForJID looks up the WhatsApp username (if any) associated with
+// the given JID, which may be either a LID or a phone number JID.
+func (wa *WhatsAppClient) GetUsernameForJID(ctx context.Context, jid types.JID) (string, error) {
+	jid = jid.ToNonAD()
+	var entry *wadb.UsernameMapEntry
+	var err error
+	switch jid.Server {
+	case types.HiddenUserServer:
+		entry, err = wa.Main.DB.UsernameMap.GetByLID(ctx, jid)
+	case types.DefaultUserServer:
+		entry, err = wa.Main.DB.UsernameMap.GetByPN(ctx, jid)
+	default:
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to look up username for %s: %w", jid, err)
+	} else if entry == nil {
+		return "", nil
+	}
+	return entry.Username, nil
+}
+
+func (wa *WhatsAppClient) resolveUsername(ctx context.Context, username string) (types.JID, error) {
+	username = strings.TrimPrefix(username, "@")
+	entry, err := wa.Main.DB.UsernameMap.GetByUsername(ctx, username)
+	if err != nil {
+		return types.EmptyJID, fmt.Errorf("failed to look up username: %w", err)
+	} else if entry == nil {
+		return types.EmptyJID, bridgev2.WrapRespErr(fmt.Errorf("no WhatsApp user found with username %s", username), mautrix.MNotFound)
+	} else if !entry.LID.IsEmpty() {
+		return entry.LID, nil
+	} else if !entry.PN.IsEmpty() {
+		return entry.PN, nil
+	}
+	return types.EmptyJID, bridgev2.WrapRespErr(fmt.Errorf("no WhatsApp user found with username %s", username), mautrix.MNotFound)
 }
 
 func isOnlyNumbers(user string) bool {
@@ -107,6 +159,10 @@ func isOnlyNumbers(user string) bool {
 		}
 	}
 	return true
+}
+
+func looksLikePhoneNumber(str string) bool {
+	return isOnlyNumbers(strings.TrimPrefix(str, "+"))
 }
 
 func (wa *WhatsAppConnector) ValidateUserID(id networkid.UserID) bool {
