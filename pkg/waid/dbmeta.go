@@ -22,11 +22,11 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/iKonoTelecomunicaciones/whatsmeow/appstate"
+	"github.com/iKonoTelecomunicaciones/whatsmeow/types"
 	"go.mau.fi/util/exerrors"
 	"go.mau.fi/util/jsontime"
 	"go.mau.fi/util/random"
-	"go.mau.fi/whatsmeow/appstate"
-	"go.mau.fi/whatsmeow/types"
 )
 
 type UserLoginMetadata struct {

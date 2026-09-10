@@ -56,16 +56,6 @@ var (
 	ErrInputLooksLikeEmail = bridgev2.WrapRespErr(errors.New("WhatsApp only supports phone numbers as user identifiers. Number looks like email"), mautrix.MInvalidParam)
 )
 
-func looksEmaily(str string) bool {
-	for _, char := range str {
-		// Characters that are usually in emails, but shouldn't be in phone numbers
-		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || char == '@' {
-			return true
-		}
-	}
-	return false
-}
-
 type cacheEntry struct {
 	jid types.JID
 	ts  time.Time
@@ -159,10 +149,6 @@ func isOnlyNumbers(user string) bool {
 		}
 	}
 	return true
-}
-
-func looksLikePhoneNumber(str string) bool {
-	return isOnlyNumbers(strings.TrimPrefix(str, "+"))
 }
 
 func (wa *WhatsAppConnector) ValidateUserID(id networkid.UserID) bool {

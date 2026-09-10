@@ -21,7 +21,7 @@ import (
 
 	"github.com/iKonoTelecomunicaciones/go/bridgev2"
 	"github.com/iKonoTelecomunicaciones/go/format"
-	"go.mau.fi/whatsmeow/types"
+	"github.com/iKonoTelecomunicaciones/whatsmeow/types"
 
 	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/connector/wadb"
 )

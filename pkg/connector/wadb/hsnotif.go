@@ -25,7 +25,7 @@ import (
 	"go.mau.fi/util/dbutil"
 	"google.golang.org/protobuf/proto"
 
-	"go.mau.fi/whatsmeow/proto/waE2E"
+	"github.com/iKonoTelecomunicaciones/whatsmeow/proto/waE2E"
 )
 
 type HistorySyncNotificationQuery struct {

@@ -21,9 +21,9 @@ import (
 	"time"
 
 	"github.com/iKonoTelecomunicaciones/go/bridgev2/status"
+	"github.com/iKonoTelecomunicaciones/whatsmeow"
+	"github.com/iKonoTelecomunicaciones/whatsmeow/proto/waE2E"
 	"go.mau.fi/util/jsontime"
-	"go.mau.fi/whatsmeow"
-	"go.mau.fi/whatsmeow/proto/waE2E"
 
 	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/waid"
 )
