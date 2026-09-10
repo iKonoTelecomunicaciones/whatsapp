@@ -16,6 +16,7 @@ type Database struct {
 	MediaRequest *MediaRequestQuery
 	HSNotif      *HistorySyncNotificationQuery
 	AvatarCache  *AvatarCacheQuery
+	UsernameMap  *UsernameMapQuery
 }
 
 func New(bridgeID networkid.BridgeID, db *dbutil.Database, log zerolog.Logger) *Database {
@@ -49,6 +50,11 @@ func New(bridgeID networkid.BridgeID, db *dbutil.Database, log zerolog.Logger) *
 		AvatarCache: &AvatarCacheQuery{
 			QueryHelper: dbutil.MakeQueryHelper(db, func(_ *dbutil.QueryHelper[*AvatarCacheEntry]) *AvatarCacheEntry {
 				return &AvatarCacheEntry{}
+			}),
+		},
+		UsernameMap: &UsernameMapQuery{
+			QueryHelper: dbutil.MakeQueryHelper(db, func(_ *dbutil.QueryHelper[*UsernameMapEntry]) *UsernameMapEntry {
+				return &UsernameMapEntry{}
 			}),
 		},
 	}

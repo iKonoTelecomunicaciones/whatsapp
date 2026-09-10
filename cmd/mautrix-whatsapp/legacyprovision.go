@@ -62,10 +62,11 @@ type PingInfo struct {
 }
 
 type OtherUserInfo struct {
-	MXID   id.UserID           `json:"mxid"`
-	JID    types.JID           `json:"jid"`
-	Name   string              `json:"displayname"`
-	Avatar id.ContentURIString `json:"avatar_url"`
+	MXID     id.UserID           `json:"mxid"`
+	JID      types.JID           `json:"jid"`
+	Name     string              `json:"displayname"`
+	Avatar   id.ContentURIString `json:"avatar_url"`
+	Username string              `json:"username,omitempty"`
 }
 
 type PortalInfo struct {
@@ -130,11 +131,17 @@ func legacyProvResolveIdentifier(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	startChat := strings.Contains(r.URL.Path, "/v1/pm/")
-	resp, err := userLogin.Client.(*connector.WhatsAppClient).ResolveIdentifier(r.Context(), number, startChat)
+	whatsappClient := userLogin.Client.(*connector.WhatsAppClient)
+	resp, err := whatsappClient.ResolveIdentifier(r.Context(), number, startChat)
 	if err != nil {
 		hlog.FromRequest(r).Warn().Err(err).Str("identifier", number).Msg("Failed to resolve identifier")
 		matrix.RespondWithError(w, err, "Internal error resolving identifier")
 		return
+	}
+	resolvedJID := waid.ParseUserID(resp.UserID)
+	username, err := whatsappClient.GetUsernameForJID(r.Context(), resolvedJID)
+	if err != nil {
+		hlog.FromRequest(r).Warn().Err(err).Stringer("jid", resolvedJID).Msg("Failed to look up username for resolved identifier")
 	}
 	var portal *bridgev2.Portal
 	if startChat {
@@ -160,10 +167,11 @@ func legacyProvResolveIdentifier(w http.ResponseWriter, r *http.Request) {
 	exhttp.WriteJSONResponse(w, http.StatusOK, PortalInfo{
 		RoomID: roomID,
 		OtherUser: &OtherUserInfo{
-			JID:    waid.ParseUserID(resp.UserID),
-			MXID:   resp.Ghost.Intent.GetMXID(),
-			Name:   resp.Ghost.Name,
-			Avatar: resp.Ghost.AvatarMXC,
+			JID:      resolvedJID,
+			MXID:     resp.Ghost.Intent.GetMXID(),
+			Name:     resp.Ghost.Name,
+			Avatar:   resp.Ghost.AvatarMXC,
+			Username: username,
 		},
 	})
 }

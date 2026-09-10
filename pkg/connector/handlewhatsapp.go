@@ -36,6 +36,7 @@ import (
 	"github.com/rs/zerolog"
 	"go.mau.fi/util/ptr"
 
+	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/connector/wadb"
 	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/waid"
 )
 
@@ -163,6 +164,9 @@ func (wa *WhatsAppClient) handleWAEvent(rawEvt any) (success bool) {
 		}
 		go wa.syncGhost(wa.JID.ToNonAD(), "push name setting", nil)
 	case *events.Contact:
+		if evt.Action.GetUsername() != "" {
+			wa.saveContactUsername(ctx, evt)
+		}
 		go wa.syncGhost(evt.JID, "contact event", nil)
 	case *events.PushName:
 		go wa.syncGhost(evt.JID, "push name event", nil)
@@ -258,6 +262,140 @@ func (wa *WhatsAppClient) handleWAEvent(rawEvt any) (success bool) {
 	return
 }
 
+func (wa *WhatsAppClient) saveContactUsername(ctx context.Context, evt *events.Contact) {
+	log := zerolog.Ctx(ctx)
+	username := evt.Action.GetUsername()
+	var lid, pn types.JID
+	if lidStr := evt.Action.GetLidJID(); lidStr != "" {
+		var err error
+		lid, err = types.ParseJID(lidStr)
+		if err != nil {
+			log.Warn().Err(err).Str("lid_jid", lidStr).Msg("Failed to parse LID from contact action")
+			lid = types.EmptyJID
+		}
+	}
+	if pnStr := evt.Action.GetPnJID(); pnStr != "" {
+		var err error
+		pn, err = types.ParseJID(pnStr)
+		if err != nil {
+			log.Warn().Err(err).Str("pn_jid", pnStr).Msg("Failed to parse phone number from contact action")
+			pn = types.EmptyJID
+		}
+	}
+	if lid.IsEmpty() && evt.JID.Server == types.HiddenUserServer {
+		lid = evt.JID
+	}
+	if pn.IsEmpty() && evt.JID.Server == types.DefaultUserServer {
+		pn = evt.JID
+	}
+	if lid.IsEmpty() {
+		log.Warn().Str("username", username).Stringer("jid", evt.JID).
+			Msg("Contact action had a username but no resolvable LID, not saving username map entry")
+		return
+	}
+	wa.maybeUpdateUsernameMap(ctx, lid, pn, username, "contact event")
+}
+
+func resolveUsernameMapJIDs(jid, alt types.JID) (lid, pn types.JID) {
+	switch jid.Server {
+	case types.HiddenUserServer:
+		lid = jid.ToNonAD()
+		if alt.Server == types.DefaultUserServer {
+			pn = alt.ToNonAD()
+		}
+	case types.DefaultUserServer:
+		pn = jid.ToNonAD()
+		if alt.Server == types.HiddenUserServer {
+			lid = alt.ToNonAD()
+		}
+	}
+	return
+}
+
+func usernameFromMessagePushName(pushName string) string {
+	pushName = strings.TrimPrefix(strings.TrimSpace(pushName), "@")
+	if pushName == "" || pushName == "-" || pushName == "username" {
+		return ""
+	}
+	if !looksLikeWhatsAppUsername(pushName) {
+		return ""
+	}
+	return pushName
+}
+
+func looksLikeWhatsAppUsername(str string) bool {
+	if len(str) < 3 || len(str) > 30 {
+		return false
+	}
+	if str[0] == '.' || str[len(str)-1] == '.' {
+		return false
+	}
+
+	str = strings.TrimPrefix(str, "@")
+
+	prevDot := false
+	for _, r := range str {
+		switch {
+		case r >= 'a' && r <= 'z':
+			prevDot = false
+		case r >= '0' && r <= '9':
+			prevDot = false
+		case r == '.':
+			if prevDot {
+				return false
+			}
+			prevDot = true
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func (wa *WhatsAppClient) maybeUpdateUsernameFromMessage(ctx context.Context, info *types.MessageSource, pushName string) {
+	if info.IsFromMe {
+		return
+	}
+	username := usernameFromMessagePushName(pushName)
+	if username == "" {
+		return
+	}
+	lid, pn := resolveUsernameMapJIDs(info.Sender, info.SenderAlt)
+	if lid.IsEmpty() {
+		return
+	}
+	wa.maybeUpdateUsernameMap(ctx, lid, pn, username, "message event")
+}
+
+func (wa *WhatsAppClient) maybeUpdateUsernameMap(ctx context.Context, lid, pn types.JID, username, source string) {
+	log := zerolog.Ctx(ctx)
+	if username == "" || lid.IsEmpty() {
+		return
+	}
+	lid = lid.ToNonAD()
+	if !pn.IsEmpty() {
+		pn = pn.ToNonAD()
+	}
+	existing, err := wa.Main.DB.UsernameMap.GetByLID(ctx, lid)
+	if err != nil {
+		log.Err(err).Stringer("lid", lid).Str("source", source).Msg("Failed to look up username map entry")
+		return
+	} else if existing != nil && existing.Username == username && (pn.IsEmpty() || existing.PN.ToNonAD() == pn) {
+		return
+	}
+	err = wa.Main.DB.UsernameMap.Put(ctx, &wadb.UsernameMapEntry{LID: lid, PN: pn, Username: username})
+	if err != nil {
+		log.Err(err).Str("username", username).Stringer("lid", lid).Str("source", source).Msg("Failed to save username map entry")
+		return
+	}
+	log.Debug().
+		Str("username", username).
+		Stringer("lid", lid).
+		Stringer("pn", pn).
+		Str("source", source).
+		Msg("Captured username")
+}
+
 func (wa *WhatsAppClient) ensureAltJIDs(ctx context.Context, info *types.MessageSource, checkPhones bool) bool {
 	var err error
 	if info.Sender.Server == types.DefaultUserServer && info.SenderAlt.IsEmpty() {
@@ -292,6 +430,7 @@ func (wa *WhatsAppClient) handleWAMessage(ctx context.Context, evt *events.Messa
 	if !wa.ensureAltJIDs(ctx, &evt.Info.MessageSource, true) {
 		return false
 	}
+	wa.maybeUpdateUsernameFromMessage(ctx, &evt.Info.MessageSource, evt.Info.PushName)
 	parsedMessageType := getMessageType(evt.Message)
 	if encReact := evt.Message.GetEncReactionMessage(); encReact != nil {
 		decrypted, err := wa.Client.DecryptReaction(ctx, evt)
