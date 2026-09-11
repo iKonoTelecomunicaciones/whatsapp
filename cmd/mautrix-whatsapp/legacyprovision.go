@@ -258,7 +258,27 @@ func legacyProvRoomInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	portalJID, err := waid.ParsePortalID(portal.ID)
+
+	if err != nil {
+		exhttp.WriteJSONResponse(w, http.StatusInternalServerError, Error{
+			Error:   "Error while fetching portal JID",
+			ErrCode: "failed to get portal JID",
+		})
+		return
+	}
+
 	whatsappClient := userLogin.Client.(*connector.WhatsAppClient)
+	username, err := whatsappClient.GetUsernameForJID(r.Context(), portalJID)
+
+	if err != nil {
+		exhttp.WriteJSONResponse(w, http.StatusInternalServerError, Error{
+			Error:   "Error while fetching username",
+			ErrCode: "failed to get username",
+		})
+		return
+	}
+
 	chatInfo, err := whatsappClient.GetChatInfo(r.Context(), portal)
 
 	if err != nil {
@@ -280,6 +300,7 @@ func legacyProvRoomInfo(w http.ResponseWriter, r *http.Request) {
 		"disappear":  chatInfo.Disappear,
 		"parent_id":  chatInfo.ParentID,
 		"user_local": *chatInfo.UserLocal,
+		"username":   username,
 	}
 
 	exhttp.WriteJSONResponse(w, http.StatusOK, portalInfo)
