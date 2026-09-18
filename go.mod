@@ -8,7 +8,7 @@ tool go.mau.fi/util/cmd/maubuild
 
 require (
 	github.com/iKonoTelecomunicaciones/go v0.30.0
-	github.com/iKonoTelecomunicaciones/whatsmeow v0.0.0-20260910155448-380aa320c3f9
+	github.com/iKonoTelecomunicaciones/whatsmeow v0.0.0-20260918194528-57678ba1ae4f
 	github.com/lib/pq v1.12.3
 	github.com/rs/zerolog v1.35.1
 	github.com/tidwall/gjson v1.19.0
