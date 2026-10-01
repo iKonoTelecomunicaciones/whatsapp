@@ -367,6 +367,25 @@ func (wa *WhatsAppClient) maybeUpdateUsernameFromMessage(ctx context.Context, in
 	wa.maybeUpdateUsernameMap(ctx, lid, pn, username, "message event")
 }
 
+// maybeUpdateUsernameFromMessageInfo saves the real WhatsApp username reported
+// by whatsmeow on the message stanza (types.MessageInfo.Username, parsed from
+// the "username" node attribute). This is the authoritative username value --
+// unlike the push name heuristic above, it is the same value whatsmeow itself
+// writes into whatsmeow_contacts via its internal updateUsername, but
+// whatsmeow does not emit an event for it, so we have to pick it up here to
+// keep whatsapp_username_map in sync (including for contacts that already
+// existed before they had a username recorded).
+func (wa *WhatsAppClient) maybeUpdateUsernameFromMessageInfo(ctx context.Context, info *types.MessageSource, username string) {
+	if info.IsFromMe || username == "" {
+		return
+	}
+	lid, pn := resolveUsernameMapJIDs(info.Sender, info.SenderAlt)
+	if lid.IsEmpty() {
+		return
+	}
+	wa.maybeUpdateUsernameMap(ctx, lid, pn, username, "message event (username field)")
+}
+
 func (wa *WhatsAppClient) maybeUpdateUsernameMap(ctx context.Context, lid, pn types.JID, username, source string) {
 	log := zerolog.Ctx(ctx)
 	if username == "" || lid.IsEmpty() {
@@ -382,6 +401,12 @@ func (wa *WhatsAppClient) maybeUpdateUsernameMap(ctx context.Context, lid, pn ty
 		return
 	} else if existing != nil && existing.Username == username && (pn.IsEmpty() || existing.PN.ToNonAD() == pn) {
 		return
+	}
+	if pn.IsEmpty() && existing != nil && !existing.PN.IsEmpty() {
+		// The caller couldn't resolve a PN for this LID (e.g. the event only
+		// carried the LID and no PN alt was cached yet). Keep the previously
+		// known PN instead of overwriting it with an empty JID.
+		pn = existing.PN
 	}
 	err = wa.Main.DB.UsernameMap.Put(ctx, &wadb.UsernameMapEntry{LID: lid, PN: pn, Username: username})
 	if err != nil {
@@ -402,6 +427,16 @@ func (wa *WhatsAppClient) ensureAltJIDs(ctx context.Context, info *types.Message
 		info.SenderAlt, err = wa.GetStore().LIDs.GetLIDForPN(ctx, info.Sender)
 		if err != nil {
 			zerolog.Ctx(ctx).Err(err).Stringer("sender", info.Sender).Msg("Failed to get LID for sender")
+			return false
+		}
+	} else if info.Sender.Server == types.HiddenUserServer && info.SenderAlt.IsEmpty() {
+		// Senders are increasingly reported as LID-only (no accompanying PN),
+		// so resolve the phone number alt too. Without this, SenderAlt stays
+		// empty and anything derived from it (e.g. whatsapp_username_map.pn)
+		// ends up empty, clobbering any previously known phone number.
+		info.SenderAlt, err = wa.GetStore().LIDs.GetPNForLID(ctx, info.Sender)
+		if err != nil {
+			zerolog.Ctx(ctx).Err(err).Stringer("sender", info.Sender).Msg("Failed to get PN for sender")
 			return false
 		}
 	}
@@ -431,6 +466,7 @@ func (wa *WhatsAppClient) handleWAMessage(ctx context.Context, evt *events.Messa
 		return false
 	}
 	wa.maybeUpdateUsernameFromMessage(ctx, &evt.Info.MessageSource, evt.Info.PushName)
+	wa.maybeUpdateUsernameFromMessageInfo(ctx, &evt.Info.MessageSource, evt.Info.Username)
 	parsedMessageType := getMessageType(evt.Message)
 	if encReact := evt.Message.GetEncReactionMessage(); encReact != nil {
 		decrypted, err := wa.Client.DecryptReaction(ctx, evt)
