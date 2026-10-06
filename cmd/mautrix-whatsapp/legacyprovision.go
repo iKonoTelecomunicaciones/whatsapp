@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	mautrix "github.com/iKonoTelecomunicaciones/go"
 	"github.com/iKonoTelecomunicaciones/go/bridgev2"
 	"github.com/iKonoTelecomunicaciones/go/bridgev2/matrix"
+	"github.com/iKonoTelecomunicaciones/go/bridgev2/networkid"
 	"github.com/iKonoTelecomunicaciones/go/event"
 	"github.com/iKonoTelecomunicaciones/go/id"
 	"github.com/iKonoTelecomunicaciones/whatsmeow"
@@ -16,8 +18,10 @@ import (
 	"github.com/iKonoTelecomunicaciones/whatsmeow/types"
 	"github.com/rs/zerolog/hlog"
 	"go.mau.fi/util/exhttp"
+	"go.mau.fi/util/exstrings"
 
 	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/connector"
+	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/connector/wadb"
 	"github.com/iKonoTelecomunicaciones/whatsapp/pkg/waid"
 )
 
@@ -27,6 +31,42 @@ import (
 //	},
 //	Subprotocols: []string{"net.maunium.whatsapp.login"},
 //}
+
+func registerLegacyPuppetRoomsRoute() {
+	if m.Matrix == nil || m.Matrix.AS == nil {
+		return
+	}
+	secret := m.Config.Provisioning.SharedSecret
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /{username}", legacyProvPuppetRooms)
+	m.Matrix.AS.Router.Handle("/_matrix/provision/v1/puppet_rooms/", exhttp.ApplyMiddleware(
+		mux,
+		exhttp.StripPrefix("/_matrix/provision/v1/puppet_rooms"),
+		legacyProvSharedSecretMiddleware(secret),
+	))
+}
+
+func legacyProvSharedSecretMiddleware(secret string) exhttp.Middleware {
+	return func(next http.Handler) http.Handler {
+		if len(secret) < 16 {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				mautrix.MForbidden.WithMessage("Provisioning API is disabled").Write(w)
+			})
+		}
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			auth := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+			if auth == "" {
+				mautrix.MMissingToken.WithMessage("Missing auth token").Write(w)
+				return
+			}
+			if !exstrings.ConstantTimeEqual(auth, secret) {
+				mautrix.MUnknownToken.WithMessage("Invalid auth token").Write(w)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
 
 func legacyProvAuth(r *http.Request) string {
 	if !strings.HasSuffix(r.URL.Path, "/v1/login") {
@@ -91,6 +131,144 @@ type SetEventBody struct {
 	RoomID     string `json:"room_id"`
 	PowerLevel int    `json:"power_level"`
 	UserID     string `json:"user_id"`
+}
+
+type PuppetRoomInfo struct {
+	RoomID id.RoomID `json:"room_id"`
+	Phone  string    `json:"phone"`
+	Name   string    `json:"name"`
+	MXID   id.UserID `json:"mxid"`
+	LID    string    `json:"lid"`
+}
+
+func legacyProvPuppetRooms(w http.ResponseWriter, r *http.Request) {
+	username := strings.TrimPrefix(r.PathValue("username"), "@")
+	if username == "" {
+		exhttp.WriteJSONResponse(w, http.StatusBadRequest, Error{
+			Error:   "Missing username",
+			ErrCode: "missing username",
+		})
+		return
+	}
+
+	wac, ok := m.Connector.(*connector.WhatsAppConnector)
+	if !ok || wac.DB == nil {
+		exhttp.WriteJSONResponse(w, http.StatusInternalServerError, Error{
+			Error:   "Bridge connector not available",
+			ErrCode: "connector unavailable",
+		})
+		return
+	}
+
+	entry, err := wac.DB.UsernameMap.GetByUsername(r.Context(), username)
+	if err != nil {
+		hlog.FromRequest(r).Err(err).Str("username", username).Msg("Failed to look up username")
+		exhttp.WriteJSONResponse(w, http.StatusInternalServerError, Error{
+			Error:   "Error while looking up username",
+			ErrCode: "failed to look up username",
+		})
+		return
+	}
+	if entry == nil {
+		exhttp.WriteJSONResponse(w, http.StatusNotFound, Error{
+			Error:   "Username not found",
+			ErrCode: "username not found",
+		})
+		return
+	}
+
+	ctx := r.Context()
+	hlog.FromRequest(r).Debug().Str("username", username).Msg("Collecting DM portals for contact")
+	portals, err := collectDMPortalsForContact(ctx, entry)
+	if err != nil {
+		hlog.FromRequest(r).Err(err).Str("username", username).Msg("Failed to fetch DM portals")
+		exhttp.WriteJSONResponse(w, http.StatusInternalServerError, Error{
+			Error:   "Error while fetching portals",
+			ErrCode: "failed to get portals",
+		})
+		return
+	}
+
+	phone := ""
+	if !entry.PN.IsEmpty() {
+		phone = entry.PN.User
+	}
+	lid := ""
+	if !entry.LID.IsEmpty() {
+		lid = entry.LID.User
+	}
+
+	hlog.FromRequest(r).Debug().Str("username", username).Str("lid", lid).Str("pn", phone).Int("portals", len(portals)).Msg("Fetched DM portals")
+	resp := make([]map[id.UserID]PuppetRoomInfo, 0, len(portals))
+	for _, portal := range portals {
+		if portal.Relay == nil {
+			continue
+		}
+		name := portal.Name
+		var puppetMXID id.UserID
+		ghost, err := m.Bridge.GetExistingGhostByID(ctx, portal.OtherUserID)
+		if err != nil {
+			hlog.FromRequest(r).Err(err).
+				Str("other_user_id", string(portal.OtherUserID)).
+				Msg("Failed to fetch ghost for portal")
+			exhttp.WriteJSONResponse(w, http.StatusInternalServerError, Error{
+				Error:   "Error while fetching ghost",
+				ErrCode: "failed to get ghost",
+			})
+			return
+		}
+		if ghost != nil {
+			if ghost.Name != "" {
+				name = ghost.Name
+			}
+			puppetMXID = ghost.Intent.GetMXID()
+		}
+		info := PuppetRoomInfo{
+			RoomID: portal.MXID,
+			Phone:  phone,
+			Name:   name,
+			MXID:   puppetMXID,
+			LID:    lid,
+		}
+		resp = append(resp, map[id.UserID]PuppetRoomInfo{
+			portal.Relay.UserMXID: info,
+		})
+	}
+
+	exhttp.WriteJSONResponse(w, http.StatusOK, resp)
+}
+
+func collectDMPortalsForContact(ctx context.Context, entry *wadb.UsernameMapEntry) ([]*bridgev2.Portal, error) {
+	seen := make(map[networkid.PortalKey]struct{})
+	var merged []*bridgev2.Portal
+
+	if !entry.LID.IsEmpty() {
+		list, err := m.Bridge.GetDMPortalsWith(ctx, waid.MakeUserID(entry.LID))
+		if err != nil {
+			return nil, err
+		}
+		for _, portal := range list {
+			if _, ok := seen[portal.PortalKey]; ok {
+				continue
+			}
+			seen[portal.PortalKey] = struct{}{}
+			merged = append(merged, portal)
+		}
+	}
+	if !entry.PN.IsEmpty() {
+		list, err := m.Bridge.GetDMPortalsWith(ctx, waid.MakeUserID(entry.PN))
+		if err != nil {
+			return nil, err
+		}
+		for _, portal := range list {
+			if _, ok := seen[portal.PortalKey]; ok {
+				continue
+			}
+			seen[portal.PortalKey] = struct{}{}
+			merged = append(merged, portal)
+		}
+	}
+	return merged, nil
 }
 
 func legacyProvContacts(w http.ResponseWriter, r *http.Request) {

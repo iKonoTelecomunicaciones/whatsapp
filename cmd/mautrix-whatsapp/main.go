@@ -37,6 +37,7 @@ func main() {
 			m.Matrix.Provisioning.Router.HandleFunc("POST /v1/set_relay", legacyProvSetRelay)
 			m.Matrix.Provisioning.Router.HandleFunc("GET /v1/set_relay/{roomID}", legacyProvValidateSetRelay)
 			m.Matrix.Provisioning.GetAuthFromRequest = legacyProvAuth
+			registerLegacyPuppetRoomsRoute()
 		}
 	}
 	m.InitVersion(Tag, Commit, BuildTime)
