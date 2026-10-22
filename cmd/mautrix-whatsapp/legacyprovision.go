@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -134,19 +135,55 @@ type SetEventBody struct {
 }
 
 type PuppetRoomInfo struct {
-	RoomID id.RoomID `json:"room_id"`
-	Phone  string    `json:"phone"`
-	Name   string    `json:"name"`
-	MXID   id.UserID `json:"mxid"`
-	LID    string    `json:"lid"`
+	RoomID   id.RoomID `json:"room_id"`
+	Username string    `json:"username"`
+	Phone    string    `json:"phone"`
+	Name     string    `json:"name"`
+	MXID     id.UserID `json:"mxid"`
+	LID      string    `json:"lid"`
+}
+
+var ErrInvalidIdentifier = errors.New("invalid identifier")
+
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func resolveUsernameMapEntry(ctx context.Context, wac *connector.WhatsAppConnector, identifier string) (*wadb.UsernameMapEntry, error) {
+	switch {
+	case strings.HasPrefix(identifier, waid.LIDPrefix):
+		lidUser := strings.TrimPrefix(identifier, waid.LIDPrefix)
+		return wac.DB.UsernameMap.GetByLID(ctx, types.NewJID(lidUser, types.HiddenUserServer))
+	case strings.Contains(identifier, "@"):
+		jid, err := types.ParseJID(identifier)
+		if err != nil {
+			return nil, ErrInvalidIdentifier
+		}
+		if jid.Server == types.HiddenUserServer {
+			return wac.DB.UsernameMap.GetByLID(ctx, jid)
+		}
+		return wac.DB.UsernameMap.GetByPN(ctx, jid)
+	case isAllDigits(identifier):
+		return wac.DB.UsernameMap.GetByPN(ctx, types.NewJID(identifier, types.DefaultUserServer))
+	default:
+		return wac.DB.UsernameMap.GetByUsername(ctx, identifier)
+	}
 }
 
 func legacyProvPuppetRooms(w http.ResponseWriter, r *http.Request) {
-	username := strings.TrimPrefix(r.PathValue("username"), "@")
-	if username == "" {
+	identifier := strings.TrimPrefix(r.PathValue("username"), "@")
+	if identifier == "" {
 		exhttp.WriteJSONResponse(w, http.StatusBadRequest, Error{
-			Error:   "Missing username",
-			ErrCode: "missing username",
+			Error:   "Missing identifier",
+			ErrCode: "missing identifier",
 		})
 		return
 	}
@@ -160,28 +197,35 @@ func legacyProvPuppetRooms(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entry, err := wac.DB.UsernameMap.GetByUsername(r.Context(), username)
+	entry, err := resolveUsernameMapEntry(r.Context(), wac, identifier)
 	if err != nil {
-		hlog.FromRequest(r).Err(err).Str("username", username).Msg("Failed to look up username")
+		hlog.FromRequest(r).Err(err).Str("identifier", identifier).Msg("Failed to look up identifier")
+		if errors.Is(err, ErrInvalidIdentifier) {
+			exhttp.WriteJSONResponse(w, http.StatusBadRequest, Error{
+				Error:   "Invalid identifier",
+				ErrCode: "invalid identifier",
+			})
+			return
+		}
 		exhttp.WriteJSONResponse(w, http.StatusInternalServerError, Error{
-			Error:   "Error while looking up username",
-			ErrCode: "failed to look up username",
+			Error:   "Error while looking up identifier",
+			ErrCode: "failed to look up identifier",
 		})
 		return
 	}
 	if entry == nil {
 		exhttp.WriteJSONResponse(w, http.StatusNotFound, Error{
-			Error:   "Username not found",
-			ErrCode: "username not found",
+			Error:   "Identifier not found",
+			ErrCode: "identifier not found",
 		})
 		return
 	}
 
 	ctx := r.Context()
-	hlog.FromRequest(r).Debug().Str("username", username).Msg("Collecting DM portals for contact")
+	hlog.FromRequest(r).Debug().Str("identifier", identifier).Msg("Collecting DM portals for contact")
 	portals, err := collectDMPortalsForContact(ctx, entry)
 	if err != nil {
-		hlog.FromRequest(r).Err(err).Str("username", username).Msg("Failed to fetch DM portals")
+		hlog.FromRequest(r).Err(err).Str("identifier", identifier).Msg("Failed to fetch DM portals")
 		exhttp.WriteJSONResponse(w, http.StatusInternalServerError, Error{
 			Error:   "Error while fetching portals",
 			ErrCode: "failed to get portals",
@@ -198,8 +242,8 @@ func legacyProvPuppetRooms(w http.ResponseWriter, r *http.Request) {
 		lid = entry.LID.User
 	}
 
-	hlog.FromRequest(r).Debug().Str("username", username).Str("lid", lid).Str("pn", phone).Int("portals", len(portals)).Msg("Fetched DM portals")
-	resp := make([]map[id.UserID]PuppetRoomInfo, 0, len(portals))
+	hlog.FromRequest(r).Debug().Str("identifier", identifier).Str("lid", lid).Str("pn", phone).Int("portals", len(portals)).Msg("Fetched DM portals")
+	resp := make(map[id.UserID]PuppetRoomInfo, len(portals))
 	for _, portal := range portals {
 		if portal.Relay == nil {
 			continue
@@ -224,15 +268,14 @@ func legacyProvPuppetRooms(w http.ResponseWriter, r *http.Request) {
 			puppetMXID = ghost.Intent.GetMXID()
 		}
 		info := PuppetRoomInfo{
-			RoomID: portal.MXID,
-			Phone:  phone,
-			Name:   name,
-			MXID:   puppetMXID,
-			LID:    lid,
+			RoomID:   portal.MXID,
+			Phone:    phone,
+			Name:     name,
+			MXID:     puppetMXID,
+			LID:      lid,
+			Username: entry.Username,
 		}
-		resp = append(resp, map[id.UserID]PuppetRoomInfo{
-			portal.Relay.UserMXID: info,
-		})
+		resp[portal.Relay.UserMXID] = info
 	}
 
 	exhttp.WriteJSONResponse(w, http.StatusOK, resp)
