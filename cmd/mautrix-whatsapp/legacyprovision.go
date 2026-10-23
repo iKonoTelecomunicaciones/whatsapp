@@ -490,7 +490,7 @@ func legacyProvRoomInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	whatsappClient := userLogin.Client.(*connector.WhatsAppClient)
-	username, err := whatsappClient.GetUsernameForJID(r.Context(), portalJID)
+	username, err := usernameForRoom(r.Context(), whatsappClient, portal, portalJID)
 
 	if err != nil {
 		exhttp.WriteJSONResponse(w, http.StatusInternalServerError, Error{
@@ -525,6 +525,68 @@ func legacyProvRoomInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	exhttp.WriteJSONResponse(w, http.StatusOK, portalInfo)
+}
+
+// usernameForRoom returns the WhatsApp username for a DM portal. The phone
+// number often never arrives on the event, so whatsapp_username_map.pn and a
+// phone-keyed contact row stay empty while the username is stored under the
+// LID. Look up by that LID first, then fall back to the portal JID.
+func usernameForRoom(ctx context.Context, client *connector.WhatsAppClient, portal *bridgev2.Portal, portalJID types.JID) (string, error) {
+	portalJID = portalJID.ToNonAD()
+	lookup := portalJID
+	if lid := lidForRoom(ctx, client, portal, portalJID); !lid.IsEmpty() {
+		lookup = lid
+	}
+
+	username, err := client.GetUsernameForJID(ctx, lookup)
+	if err != nil || username != "" {
+		return username, err
+	}
+	if username = contactUsername(ctx, client, lookup); username != "" {
+		return username, nil
+	}
+	if lookup == portalJID {
+		return "", nil
+	}
+
+	username, err = client.GetUsernameForJID(ctx, portalJID)
+	if err != nil || username != "" {
+		return username, err
+	}
+	return contactUsername(ctx, client, portalJID), nil
+}
+
+func lidForRoom(ctx context.Context, client *connector.WhatsAppClient, portal *bridgev2.Portal, portalJID types.JID) types.JID {
+	if portalJID.Server == types.HiddenUserServer {
+		return portalJID
+	}
+	if portal != nil {
+		if other := waid.ParseUserID(portal.OtherUserID); other.Server == types.HiddenUserServer {
+			return other.ToNonAD()
+		}
+	}
+	if portalJID.Server != types.DefaultUserServer || client.GetStore().LIDs == nil {
+		return types.EmptyJID
+	}
+	lid, err := client.GetStore().LIDs.GetLIDForPN(ctx, portalJID)
+	if err != nil || lid.IsEmpty() {
+		return types.EmptyJID
+	}
+	return lid.ToNonAD()
+}
+
+func contactUsername(ctx context.Context, client *connector.WhatsAppClient, jid types.JID) string {
+	if jid.Server != types.HiddenUserServer && jid.Server != types.DefaultUserServer {
+		return ""
+	}
+	if client.GetStore().Contacts == nil {
+		return ""
+	}
+	contact, err := client.GetStore().Contacts.GetContact(ctx, jid)
+	if err != nil {
+		return ""
+	}
+	return contact.Username
 }
 
 func legacyProvSetPowerlevels(w http.ResponseWriter, r *http.Request) {
