@@ -510,6 +510,13 @@ func legacyProvRoomInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	phone := ""
+	if pn, pnErr := pnForRoom(r.Context(), whatsappClient, portal, portalJID); pnErr != nil {
+		hlog.FromRequest(r).Warn().Err(pnErr).Str("room_id", room_id).Msg("Failed to resolve phone for room")
+	} else if !pn.IsEmpty() {
+		phone = pn.User
+	}
+
 	portalInfo := map[string]interface{}{
 		"room_id":    portal.MXID,
 		"name":       chatInfo.Name,
@@ -522,6 +529,7 @@ func legacyProvRoomInfo(w http.ResponseWriter, r *http.Request) {
 		"parent_id":  chatInfo.ParentID,
 		"user_local": *chatInfo.UserLocal,
 		"username":   username,
+		"phone":      phone,
 	}
 
 	exhttp.WriteJSONResponse(w, http.StatusOK, portalInfo)
@@ -573,6 +581,36 @@ func lidForRoom(ctx context.Context, client *connector.WhatsAppClient, portal *b
 		return types.EmptyJID
 	}
 	return lid.ToNonAD()
+}
+
+func pnForRoom(ctx context.Context, client *connector.WhatsAppClient, portal *bridgev2.Portal, portalJID types.JID) (types.JID, error) {
+	portalJID = portalJID.ToNonAD()
+	if portalJID.Server == types.DefaultUserServer {
+		return portalJID, nil
+	}
+
+	lid := lidForRoom(ctx, client, portal, portalJID)
+	if lid.IsEmpty() {
+		return types.EmptyJID, nil
+	}
+
+	if client.GetStore().LIDs != nil {
+		pn, err := client.GetStore().LIDs.GetPNForLID(ctx, lid)
+		if err != nil {
+			return types.EmptyJID, err
+		}
+		if !pn.IsEmpty() {
+			return pn.ToNonAD(), nil
+		}
+	}
+	entry, err := client.Main.DB.UsernameMap.GetByLID(ctx, lid)
+	if err != nil {
+		return types.EmptyJID, err
+	}
+	if entry != nil && !entry.PN.IsEmpty() {
+		return entry.PN.ToNonAD(), nil
+	}
+	return types.EmptyJID, nil
 }
 
 func contactUsername(ctx context.Context, client *connector.WhatsAppClient, jid types.JID) string {
