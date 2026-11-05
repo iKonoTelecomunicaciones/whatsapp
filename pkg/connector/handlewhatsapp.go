@@ -367,16 +367,12 @@ func (wa *WhatsAppClient) maybeUpdateUsernameFromMessage(ctx context.Context, in
 	wa.maybeUpdateUsernameMap(ctx, lid, pn, username, "message event")
 }
 
-// maybeUpdateUsernameFromMessageInfo saves the real WhatsApp username reported
-// by whatsmeow on the message stanza (types.MessageInfo.Username, parsed from
-// the "username" node attribute). This is the authoritative username value --
-// unlike the push name heuristic above, it is the same value whatsmeow itself
-// writes into whatsmeow_contacts via its internal updateUsername, but
-// whatsmeow does not emit an event for it, so we have to pick it up here to
-// keep whatsapp_username_map in sync (including for contacts that already
-// existed before they had a username recorded).
+// maybeUpdateUsernameFromMessageInfo saves the sender identity from a message.
+// When the stanza carries a WhatsApp username it is stored with the LID and
+// phone. When it does not (push name only, no "username" attribute), the LID
+// and phone are still stored so the contact can be identified later.
 func (wa *WhatsAppClient) maybeUpdateUsernameFromMessageInfo(ctx context.Context, info *types.MessageSource, username string) {
-	if info.IsFromMe || username == "" {
+	if info.IsFromMe {
 		return
 	}
 	lid, pn := resolveUsernameMapJIDs(info.Sender, info.SenderAlt)
@@ -388,7 +384,7 @@ func (wa *WhatsAppClient) maybeUpdateUsernameFromMessageInfo(ctx context.Context
 
 func (wa *WhatsAppClient) maybeUpdateUsernameMap(ctx context.Context, lid, pn types.JID, username, source string) {
 	log := zerolog.Ctx(ctx)
-	if username == "" || lid.IsEmpty() {
+	if lid.IsEmpty() {
 		return
 	}
 	lid = lid.ToNonAD()
@@ -399,14 +395,22 @@ func (wa *WhatsAppClient) maybeUpdateUsernameMap(ctx context.Context, lid, pn ty
 	if err != nil {
 		log.Err(err).Stringer("lid", lid).Str("source", source).Msg("Failed to look up username map entry")
 		return
-	} else if existing != nil && existing.Username == username && (pn.IsEmpty() || existing.PN.ToNonAD() == pn) {
-		return
+	}
+	if existing != nil && username == "" {
+		// An event with no username must not wipe one we already stored.
+		username = existing.Username
 	}
 	if pn.IsEmpty() && existing != nil && !existing.PN.IsEmpty() {
 		// The caller couldn't resolve a PN for this LID (e.g. the event only
 		// carried the LID and no PN alt was cached yet). Keep the previously
 		// known PN instead of overwriting it with an empty JID.
 		pn = existing.PN
+	}
+	if username == "" && pn.IsEmpty() {
+		return
+	}
+	if existing != nil && existing.Username == username && existing.PN.ToNonAD() == pn.ToNonAD() {
+		return
 	}
 	err = wa.Main.DB.UsernameMap.Put(ctx, &wadb.UsernameMapEntry{LID: lid, PN: pn, Username: username})
 	if err != nil {
@@ -418,7 +422,7 @@ func (wa *WhatsAppClient) maybeUpdateUsernameMap(ctx context.Context, lid, pn ty
 		Stringer("lid", lid).
 		Stringer("pn", pn).
 		Str("source", source).
-		Msg("Captured username")
+		Msg("Captured username map entry")
 }
 
 func (wa *WhatsAppClient) ensureAltJIDs(ctx context.Context, info *types.MessageSource, checkPhones bool) bool {

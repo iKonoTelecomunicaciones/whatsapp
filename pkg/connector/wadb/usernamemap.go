@@ -2,6 +2,7 @@ package wadb
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/iKonoTelecomunicaciones/whatsmeow/types"
 	"go.mau.fi/util/dbutil"
@@ -31,7 +32,8 @@ const (
 		INSERT INTO whatsapp_username_map (lid, pn, username)
 		VALUES ($1, $2, $3)
 		ON CONFLICT (lid) DO UPDATE
-		SET pn = EXCLUDED.pn, username = EXCLUDED.username
+		SET pn = COALESCE(EXCLUDED.pn, whatsapp_username_map.pn),
+		    username = COALESCE(EXCLUDED.username, whatsapp_username_map.username)
 	`
 )
 
@@ -58,9 +60,18 @@ type UsernameMapEntry struct {
 }
 
 func (ume *UsernameMapEntry) Scan(row dbutil.Scannable) (*UsernameMapEntry, error) {
-	return dbutil.ValueOrErr(ume, row.Scan(&ume.LID, &ume.PN, &ume.Username))
+	var username sql.NullString
+	err := row.Scan(&ume.LID, &ume.PN, &username)
+	if err == nil {
+		ume.Username = username.String
+	}
+	return dbutil.ValueOrErr(ume, err)
 }
 
 func (ume *UsernameMapEntry) sqlVariables() []any {
-	return []any{ume.LID, ume.PN, ume.Username}
+	var username any
+	if ume.Username != "" {
+		username = ume.Username
+	}
+	return []any{ume.LID, ume.PN, username}
 }
