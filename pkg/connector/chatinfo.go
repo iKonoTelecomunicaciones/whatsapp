@@ -30,6 +30,13 @@ func (wa *WhatsAppClient) GetChatInfo(ctx context.Context, portal *bridgev2.Port
 }
 
 func (wa *WhatsAppClient) getChatInfo(ctx context.Context, portalJID types.JID, conv *wadb.Conversation, isNew bool) (wrapped *bridgev2.ChatInfo, err error) {
+	log := zerolog.Ctx(ctx).With().
+		Stringer("portal_jid", portalJID).
+		Str("portal_server", portalJID.Server).
+		Bool("is_new", isNew).
+		Bool("has_conversation", conv != nil).
+		Logger()
+	log.Debug().Msg("Building chat info")
 	switch portalJID.Server {
 	case types.DefaultUserServer, types.HiddenUserServer, types.BotServer:
 		wrapped = wa.wrapDMInfo(ctx, portalJID)
@@ -55,7 +62,16 @@ func (wa *WhatsAppClient) getChatInfo(ctx context.Context, portalJID types.JID, 
 	default:
 		return nil, fmt.Errorf("unsupported server %s", portalJID.Server)
 	}
+	log.Debug().
+		Bool("topic_nil", wrapped == nil || wrapped.Topic == nil).
+		Bool("type_nil", wrapped == nil || wrapped.Type == nil).
+		Bool("members_nil", wrapped == nil || wrapped.Members == nil).
+		Bool("user_local_nil", wrapped == nil || wrapped.UserLocal == nil).
+		Msg("Wrapped chat info before extras")
 	wa.addExtrasToWrapped(ctx, portalJID, wrapped, conv, isNew)
+	log.Debug().
+		Bool("user_local_nil", wrapped == nil || wrapped.UserLocal == nil).
+		Msg("Wrapped chat info after extras")
 	return wrapped, nil
 }
 
@@ -94,9 +110,21 @@ func updateDisappearingTimerSetAt(ts int64) bridgev2.ExtraUpdater[*bridgev2.Port
 }
 
 func (wa *WhatsAppClient) applyChatSettings(ctx context.Context, chatID types.JID, info *bridgev2.ChatInfo) {
+	log := zerolog.Ctx(ctx).With().Stringer("chat_id", chatID).Logger()
+	clientNil := wa.Client == nil
+	storeNil := clientNil || wa.Client.Store == nil
+	if storeNil {
+		log.Warn().
+			Bool("client_nil", clientNil).
+			Bool("device_store_nil", true).
+			Msg("WhatsApp device store is not loaded; chat settings cannot be read and UserLocal will stay nil")
+	}
 	chat, err := wa.GetStore().ChatSettings.GetChatSettings(ctx, chatID)
 	if err != nil {
-		zerolog.Ctx(ctx).Warn().Err(err).Msg("Failed to get chat settings")
+		log.Warn().Err(err).
+			Bool("client_nil", clientNil).
+			Bool("device_store_nil", storeNil).
+			Msg("Failed to get chat settings; leaving UserLocal unset")
 		return
 	}
 	if !chat.Found {
