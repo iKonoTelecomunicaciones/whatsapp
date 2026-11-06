@@ -14,6 +14,7 @@ import (
 	"github.com/iKonoTelecomunicaciones/whatsmeow"
 	"github.com/iKonoTelecomunicaciones/whatsmeow/appstate"
 	"github.com/iKonoTelecomunicaciones/whatsmeow/types"
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/hlog"
 	"go.mau.fi/util/exhttp"
 
@@ -224,6 +225,7 @@ func legacyProvPing(w http.ResponseWriter, r *http.Request) {
 }
 
 func legacyProvRoomInfo(w http.ResponseWriter, r *http.Request) {
+	log := hlog.FromRequest(r)
 	userLogin := m.Matrix.Provisioning.GetLoginForRequest(w, r)
 
 	if userLogin == nil {
@@ -282,6 +284,7 @@ func legacyProvRoomInfo(w http.ResponseWriter, r *http.Request) {
 	chatInfo, err := whatsappClient.GetChatInfo(r.Context(), portal)
 
 	if err != nil {
+		log.Warn().Err(err).Str("room_id", room_id).Msg("Failed to fetch chat info")
 		exhttp.WriteJSONResponse(w, http.StatusInternalServerError, Error{
 			Error:   "Error while fetching chat info",
 			ErrCode: "failed to get chat info",
@@ -289,17 +292,49 @@ func legacyProvRoomInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if chatInfo == nil {
+		log.Warn().Str("room_id", room_id).Msg("GetChatInfo returned nil chat info")
+		exhttp.WriteJSONResponse(w, http.StatusInternalServerError, Error{
+			Error:   "Error while fetching chat info",
+			ErrCode: "chat info is nil",
+		})
+		return
+	}
+
+	var members any
+	if chatInfo.Members != nil {
+		members = &chatInfo.Members.MemberMap
+	}
+
+	// These fields are pointers. Dereferencing them panics when chat settings
+	// could not be loaded (UserLocal) or a wrapper left a field unset.
+	clientNil := whatsappClient.Client == nil
+	storeNil := clientNil || whatsappClient.Client.Store == nil
+	level := zerolog.InfoLevel
+	if chatInfo.UserLocal == nil || chatInfo.Topic == nil || chatInfo.Type == nil || chatInfo.Members == nil || storeNil {
+		level = zerolog.WarnLevel
+	}
+	log.WithLevel(level).
+		Str("room_id", room_id).
+		Bool("topic_nil", chatInfo.Topic == nil).
+		Bool("type_nil", chatInfo.Type == nil).
+		Bool("members_nil", chatInfo.Members == nil).
+		Bool("user_local_nil", chatInfo.UserLocal == nil).
+		Bool("client_nil", clientNil).
+		Bool("device_store_nil", storeNil).
+		Msg("Building room info response")
+
 	portalInfo := map[string]interface{}{
 		"room_id":    portal.MXID,
 		"name":       chatInfo.Name,
 		"topic":      *chatInfo.Topic,
 		"avatar":     chatInfo.Avatar,
-		"members":    &chatInfo.Members.MemberMap,
+		"members":    members,
 		"join_rule":  chatInfo.JoinRule,
 		"type":       *chatInfo.Type,
 		"disappear":  chatInfo.Disappear,
 		"parent_id":  chatInfo.ParentID,
-		"user_local": *chatInfo.UserLocal,
+		"user_local": chatInfo.UserLocal,
 		"username":   username,
 	}
 
