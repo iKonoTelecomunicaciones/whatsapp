@@ -94,7 +94,11 @@ func (wa *WhatsAppClient) reIDPhoneDMToLIDIfNeeded(ctx context.Context, pn types
 			Msg("Received event for portal in unmigrated DMs list, trying migration")
 		_, err = wa.Main.reIDPhoneDMToLID(ctx, pn, lid, wa.UserLogin.ID)
 		if err != nil {
-			zerolog.Ctx(ctx).Err(err).Msg("Failed to re-ID phone DM to LID")
+			zerolog.Ctx(ctx).Err(err).
+				Object("portal_key", portalKey).
+				Stringer("pn", pn).
+				Stringer("lid", lid).
+				Msg("Failed to re-ID phone DM to LID after inbound event")
 			return false
 		}
 	}
@@ -102,6 +106,14 @@ func (wa *WhatsAppClient) reIDPhoneDMToLIDIfNeeded(ctx context.Context, pn types
 }
 
 func (wa *WhatsAppConnector) reIDPhoneDMToLID(ctx context.Context, pn, lid types.JID, receiver networkid.UserLoginID) (bridgev2.ReIDResult, error) {
+	log := zerolog.Ctx(ctx).With().
+		Str("action", "re-id phone dm to lid").
+		Str("phone_portal_id", string(waid.MakePortalID(pn))).
+		Str("lid_portal_id", string(waid.MakePortalID(lid))).
+		Str("receiver", string(receiver)).
+		Logger()
+	log.Info().Stringer("pn", pn).Stringer("lid", lid).Msg("Re-IDing phone-number DM portal to LID")
+
 	pnKey := networkid.PortalKey{
 		ID:       waid.MakePortalID(pn),
 		Receiver: receiver,
@@ -112,16 +124,24 @@ func (wa *WhatsAppConnector) reIDPhoneDMToLID(ctx context.Context, pn, lid types
 	}
 	result, portal, err := wa.Bridge.ReIDPortal(ctx, pnKey, lidKey)
 	if err != nil {
+		log.Err(err).Object("source_portal_key", pnKey).Object("target_portal_key", lidKey).
+			Msg("Failed to re-ID portal keys in database")
 		return result, err
+	}
+	if result != bridgev2.ReIDResultSourceReIDd && result != bridgev2.ReIDResultTargetDeletedAndSourceReIDd {
+		log.Debug().Stringer("result", result).Msg("Re-ID portal finished without updating this portal row")
+		return result, nil
 	}
 	if result == bridgev2.ReIDResultSourceReIDd || result == bridgev2.ReIDResultTargetDeletedAndSourceReIDd {
 		var pnGhost, lidGhost *bridgev2.Ghost
 		pnGhost, err = wa.Bridge.GetGhostByID(ctx, waid.MakeUserID(pn))
 		if err != nil {
+			log.Err(err).Stringer("pn", pn).Msg("Failed to get PN ghost for LID migration")
 			return result, fmt.Errorf("failed to get PN ghost: %w", err)
 		}
 		lidGhost, err = wa.Bridge.GetGhostByID(ctx, waid.MakeUserID(lid))
 		if err != nil {
+			log.Err(err).Stringer("lid", lid).Msg("Failed to get LID ghost for LID migration")
 			return result, fmt.Errorf("failed to get LID ghost: %w", err)
 		}
 		_, err = pnGhost.Intent.SendState(ctx, portal.MXID, event.StateMember, pnGhost.Intent.GetMXID().String(), &event.Content{
@@ -129,6 +149,7 @@ func (wa *WhatsAppConnector) reIDPhoneDMToLID(ctx context.Context, pn, lid types
 			Raw:    map[string]any{"com.beeper.exclude_from_timeline": true},
 		}, time.Time{})
 		if err != nil {
+			log.Err(err).Stringer("portal_mxid", portal.MXID).Msg("Failed to send leave event for PN ghost during LID migration")
 			return result, fmt.Errorf("failed to send leave event for PN ghost: %w", err)
 		}
 		_, err = wa.Bridge.Bot.SendState(ctx, portal.MXID, event.StateMember, lidGhost.Intent.GetMXID().String(), &event.Content{
@@ -136,6 +157,7 @@ func (wa *WhatsAppConnector) reIDPhoneDMToLID(ctx context.Context, pn, lid types
 			Raw:    map[string]any{"com.beeper.exclude_from_timeline": true},
 		}, time.Time{})
 		if err != nil {
+			log.Err(err).Stringer("portal_mxid", portal.MXID).Msg("Failed to send invite event for LID ghost during LID migration")
 			return result, fmt.Errorf("failed to send invite event for LID ghost: %w", err)
 		}
 		_, err = lidGhost.Intent.SendState(ctx, portal.MXID, event.StateMember, lidGhost.Intent.GetMXID().String(), &event.Content{
@@ -143,11 +165,20 @@ func (wa *WhatsAppConnector) reIDPhoneDMToLID(ctx context.Context, pn, lid types
 			Raw:    map[string]any{"com.beeper.exclude_from_timeline": true},
 		}, time.Time{})
 		if err != nil {
+			log.Err(err).Stringer("portal_mxid", portal.MXID).Msg("Failed to send join event for LID ghost during LID migration")
 			return result, fmt.Errorf("failed to send join event for LID ghost: %w", err)
 		}
 		portal.OtherUserID = lidGhost.ID
+		if portal.Relay == nil && portal.RelayLoginID != "" {
+			log.Warn().
+				Str("relay_login_id", string(portal.RelayLoginID)).
+				Object("portal_key", portal.PortalKey).
+				Msg("Clearing dangling relay login before saving portal after re-ID")
+			portal.RelayLoginID = ""
+		}
 		err = portal.Save(ctx)
 		if err != nil {
+			log.Err(err).Object("portal_key", portal.PortalKey).Msg("Failed to save portal after re-ID")
 			return result, fmt.Errorf("failed to save portal after re-ID: %w", err)
 		}
 		portal.UpdateBridgeInfo(ctx)
@@ -171,29 +202,56 @@ func (wa *WhatsAppConnector) migrateToLIDDMs(ctx context.Context) error {
 	const findPNPortals = "SELECT id, receiver FROM portal WHERE bridge_id=$1 AND room_type='dm' AND id LIKE '%@s.whatsapp.net'"
 	pnPortalKeys, err := scanPortalKey.NewRowIter(wa.Bridge.DB.Query(ctx, findPNPortals, wa.Bridge.ID)).AsList()
 	if err != nil {
+		log.Err(err).Msg("Failed to list phone-number DM portals for LID migration")
 		return fmt.Errorf("failed to get phone number portals: %w", err)
 	}
-	var updatedPortals, missingLID int
+	log.Info().Int("phone_dm_portals", len(pnPortalKeys)).Msg("Found DM portals still using phone numbers instead of LIDs")
+	var updatedPortals, missingLID, failedReID, skippedPortals int
 	for _, key := range pnPortalKeys {
 		pnJID, err := waid.ParsePortalID(key.ID)
 		if err != nil {
-			log.Warn().Err(err).Str("portal_id", string(key.ID)).Msg("Failed to parse portal ID")
+			skippedPortals++
+			log.Warn().Err(err).Str("portal_id", string(key.ID)).Str("receiver", string(key.Receiver)).
+				Msg("Skipping phone DM portal: failed to parse portal ID")
 			continue
 		} else if pnJID.Server != types.DefaultUserServer {
+			skippedPortals++
+			log.Debug().
+				Str("portal_id", string(key.ID)).
+				Stringer("parsed_jid", pnJID).
+				Msg("Skipping portal ID that is not a phone-number JID")
 			continue
 		}
+		log.Info().
+			Object("portal_key", key).
+			Stringer("pn", pnJID).
+			Msg("Migrating phone-number DM portal to LID")
 		lid, err := wa.DeviceStore.LIDMap.GetLIDForPN(ctx, pnJID)
 		if err != nil {
-			return fmt.Errorf("failed to get LID for PN portal %s: %w", key.ID, err)
+			failedReID++
+			wa.unmigratedDMs.Add(key)
+			log.Err(err).Object("portal_key", key).Stringer("pn", pnJID).
+				Msg("Failed to look up LID for phone DM portal")
+			continue
 		} else if lid.IsEmpty() {
-			log.Warn().Stringer("pn", pnJID).Msg("No LID for PN portal")
+			log.Warn().
+				Object("portal_key", key).
+				Stringer("pn", pnJID).
+				Msg("Phone DM portal has no LID mapping yet, will retry later")
 			wa.unmigratedDMs.Add(key)
 			missingLID++
 			continue
 		}
 		res, err := wa.reIDPhoneDMToLID(ctx, pnJID, lid, key.Receiver)
 		if err != nil {
-			return fmt.Errorf("failed to re-ID %s to %s: %w", pnJID, lid, err)
+			failedReID++
+			wa.unmigratedDMs.Add(key)
+			log.Err(err).
+				Stringer("pn", pnJID).
+				Stringer("lid", lid).
+				Object("portal_key", key).
+				Msg("Failed to re-ID phone number DM portal, will retry later")
+			continue
 		}
 		updatedPortals++
 		log.Info().
@@ -206,7 +264,19 @@ func (wa *WhatsAppConnector) migrateToLIDDMs(ctx context.Context) error {
 		Int("updated_portals", updatedPortals).
 		Int("total_pn_portals", len(pnPortalKeys)).
 		Int("missing_lid", missingLID).
+		Int("failed_re_id", failedReID).
+		Int("skipped_portals", skippedPortals).
 		Msg("Finished re-IDing phone number DM portals")
-	wa.Bridge.DB.KV.Set(ctx, "whatsapp_lid_dms_migrated", "true")
+	if failedReID > 0 {
+		log.Warn().Int("failed_re_id", failedReID).
+			Msg("Phone DM LID migration had failures; whatsapp_lid_dms_migrated not set, will retry on next startup")
+	} else if missingLID > 0 {
+		log.Warn().Int("missing_lid", missingLID).
+			Msg("Some phone DM portals still lack LID mappings; marked complete but they remain in unmigrated set for events")
+		wa.Bridge.DB.KV.Set(ctx, "whatsapp_lid_dms_migrated", "true")
+	} else {
+		log.Info().Msg("All phone-number DM portals migrated to LIDs; marked whatsapp_lid_dms_migrated")
+		wa.Bridge.DB.KV.Set(ctx, "whatsapp_lid_dms_migrated", "true")
+	}
 	return nil
 }
